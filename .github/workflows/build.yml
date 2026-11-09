@@ -1,0 +1,32 @@
+name: build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            name: macOS
+          - os: windows-2022
+            name: Windows
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build --config Release --parallel
+      - name: Upload artefacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: RitmoCR78-${{ matrix.name }}
+          path: |
+            build/RitmoCR78_artefacts/Release/VST3
+            build/RitmoCR78_artefacts/Release/AU
+            build/RitmoCR78_artefacts/Release/Standalone
