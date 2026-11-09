@@ -4,6 +4,7 @@
 // Máster: compresor -> EQ gráfico de 6 bandas.
 
 #include "../dsp/DspUtils.h"
+#include <algorithm>
 #include <array>
 #include <vector>
 
@@ -35,6 +36,7 @@ struct DelayLine
 struct Overdrive
 {
     float drive = 0.4f, tone = 0.5f, mix = 1.0f;
+    int mode = 0;   // 0 transistor (asimétrico), 1 válvula (suave y simétrico), 2 fuzz (recorte duro)
     Svf lpL, lpR;
     float sr = 44100;
     void prepare (float s) { sr = s; lpL.reset(); lpR.reset(); }
@@ -45,7 +47,14 @@ struct Overdrive
         lpL.set (800.0f + 11000.0f * tone, 0.7f, sr);
         lpR.set (800.0f + 11000.0f * tone, 0.7f, sr);
         // Pequeña asimetría para armónicos pares, como un transistor saturando.
-        auto shape = [&] (float x) { return (std::tanh (g * x + 0.15f) - std::tanh (0.15f)) * comp; };
+        auto shape = [&] (float x) {
+            switch (mode)
+            {
+                case 1: { const float y = g * 0.6f * x; return y / (1.0f + std::abs (y)) * (1.0f + 1.0f / (0.6f * g)); }
+                case 2: { const float y = std::clamp (g * 2.0f * x, -1.0f, 1.0f); return y * 0.8f; }
+                default: return (std::tanh (g * x + 0.15f) - std::tanh (0.15f)) * comp;
+            }
+        };
         lpL.process (shape (l)); lpR.process (shape (r));
         l = l + (lpL.lp * 0.7f - l) * mix;
         r = r + (lpR.lp * 0.7f - r) * mix;
@@ -58,17 +67,20 @@ struct Flanger
     float rate = 0.3f, depth = 0.6f, feedback = 0.4f, mix = 0.5f;
     DelayLine dl, dr;
     float sr = 44100, phase = 0, fbL = 0, fbR = 0;
-    void prepare (float s) { sr = s; dl.resize ((int) (s * 0.02f)); dr.resize ((int) (s * 0.02f)); phase = 0; fbL = fbR = 0; }
+    int mode = 0;   // 0 flanger, 1 chorus (retardo más largo, sin realimentación)
+    void prepare (float s) { sr = s; dl.resize ((int) (s * 0.04f)); dr.resize ((int) (s * 0.04f)); phase = 0; fbL = fbR = 0; }
     void process (float& l, float& r)
     {
-        const float hz = 0.03f + rate * rate * 5.0f;
+        const bool chorus = mode == 1;
+        const float hz = chorus ? 0.1f + rate * rate * 2.0f : 0.03f + rate * rate * 5.0f;
         phase += hz / sr; if (phase >= 1) phase -= 1;
         auto tri = [] (float p) { return p < 0.5f ? 4.0f * p - 1.0f : 3.0f - 4.0f * p; };
-        const float base = 0.0006f * sr, span = (0.0004f + 0.0068f * depth) * sr;
+        const float base = (chorus ? 0.012f : 0.0006f) * sr;
+        const float span = (chorus ? 0.0005f + 0.009f * depth : 0.0004f + 0.0068f * depth) * sr;
         const float dL = base + span * 0.5f * (1.0f + tri (phase));
         float pr = phase + 0.25f; if (pr >= 1) pr -= 1;           // canal derecho desfasado 90°
         const float dR = base + span * 0.5f * (1.0f + tri (pr));
-        const float fb = feedback * 0.92f;
+        const float fb = chorus ? 0.0f : feedback * 0.92f;
         const float yl = dl.read (dL), yr = dr.read (dR);
         dl.push (l + yl * fb); dr.push (r + yr * fb);
         l = l * (1.0f - 0.5f * mix) + yl * mix * 0.7f;
@@ -80,6 +92,7 @@ struct Flanger
 struct TempoDelay
 {
     float timeBeats = 0.75f, feedback = 0.35f, damp = 0.4f, mix = 0.3f;
+    float freeMs = 0.0f;   // > 0: tiempo libre en ms en lugar de seguir el tempo
     bool pingPong = true;
     DelayLine dl, dr;
     Svf lpL, lpR;
@@ -92,7 +105,8 @@ struct TempoDelay
     }
     void process (float& l, float& r, double bpm)
     {
-        const float target = std::min ((float) (timeBeats * 60.0 / std::max (20.0, bpm)) * sr, sr * 3.0f);
+        const float secs = freeMs > 0 ? freeMs * 0.001f : (float) (timeBeats * 60.0 / std::max (20.0, bpm));
+        const float target = std::min (secs * sr, sr * 3.0f);
         smoothed = smoothed <= 0 ? target : smoothed + (target - smoothed) * 0.0005f;
         lpL.set (1200.0f + 14000.0f * (1.0f - damp), 0.6f, sr);
         lpR.set (1200.0f + 14000.0f * (1.0f - damp), 0.6f, sr);
@@ -111,6 +125,7 @@ struct GatedReverb
 {
     float size = 0.7f, gateMs = 250.0f, mix = 0.35f;
     bool gateOn = true;
+    int mode = 0;   // 0 sala, 1 placa (más brillante y densa), 2 inversa (la cola crece y el gate la corta)
     static constexpr int N = 8;
     std::array<DelayLine, N> lines;
     std::array<float, N> lens {}, lpState {};
@@ -132,17 +147,19 @@ struct GatedReverb
         const float in = std::max (std::abs (l), std::abs (r));
         follower = std::max (in, follower * 0.9995f);
         if (in > 0.02f) sinceHit = 0; else ++sinceHit;
-        const float open = (! gateOn || sinceHit < (long) (gateMs * 0.001f * sr)) ? 1.0f : 0.0f;
+        const bool gateActive = gateOn || mode == 2;
+        const float open = (! gateActive || sinceHit < (long) (gateMs * 0.001f * sr)) ? 1.0f : 0.0f;
         gateGain += (open - gateGain) * (open > gateGain ? 0.01f : 0.004f);
 
-        const float scale = 0.6f + 0.8f * size;
+        const float scale = (0.6f + 0.8f * size) * (mode == 1 ? 0.7f : 1.0f);
+        const float damping = mode == 1 ? 0.85f : 0.55f;
         const float fb = 0.70f + 0.27f * size;
         std::array<float, N> o {};
         float sum = 0;
         for (int i = 0; i < N; ++i)
         {
             o[(size_t) i] = lines[(size_t) i].read (lens[(size_t) i] * scale);
-            lpState[(size_t) i] += (o[(size_t) i] - lpState[(size_t) i]) * 0.55f; // amortiguación de agudos
+            lpState[(size_t) i] += (o[(size_t) i] - lpState[(size_t) i]) * damping; // amortiguación de agudos
             o[(size_t) i] = lpState[(size_t) i];
             sum += o[(size_t) i];
         }
@@ -156,7 +173,13 @@ struct GatedReverb
         }
         float wl = 0, wr = 0;
         for (int i = 0; i < N; ++i) ((i & 1) ? wr : wl) += o[(size_t) i];
-        wl *= gateGain * 0.5f; wr *= gateGain * 0.5f;
+        float swell = 1.0f;
+        if (mode == 2)   // inversa: rampa creciente hasta que el gate cierra
+        {
+            const float x = std::min (1.0f, (float) sinceHit / std::max (1.0f, gateMs * 0.001f * sr));
+            swell = 0.15f + 1.6f * x * x;
+        }
+        wl *= gateGain * 0.5f * swell; wr *= gateGain * 0.5f * swell;
         l += wl * mix; r += wr * mix;
     }
 };

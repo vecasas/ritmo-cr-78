@@ -123,3 +123,18 @@ La barra **PRESET** (a la derecha de las pestañas) tiene anterior / siguiente, 
 
 - **De fábrica**: 8 presets de sonido (Inicial, Seco de estudio, Sala con gate, Cinta caliente, Flanger metálico, Eco dub, Graves profundos, Lo-fi pequeño). Cambian voces, efectos y máster, pero no tus patrones, el ritmo, el tempo, el MIDI ni las salidas. El DAW también los ve como programas.
 - **Tuyos**: un preset guarda todo: sonido, efectos, patrones de usuario, canción y mapa MIDI. Se guardan en `Documentos/Ritmo CR-78/Presets` como archivos `.r78preset`, que puedes copiar entre Mac y Windows. Cargar un preset no para ni arranca la caja.
+
+## Modos de efecto y control propio por voz (fase 6)
+
+- **Overdrive**: Transistor (asimétrico, el de siempre), Válvula (suave) y Fuzz (recorte duro).
+- **Flanger / Chorus**: el mismo bloque hace de chorus con retardo más largo y sin realimentación.
+- **Delay**: *Al tempo* sigue el tempo con las figuras; sin marcar usa *Libre ms* (20–1500 ms).
+- **Reverb**: Sala, Placa (más brillante y densa) e Inversa (la cola crece hasta que el gate la corta).
+- **Control propio** en cada tira (mando pequeño junto a Nivel). A medio recorrido suena como antes.
+  - Bombo, bongós, conga y claves: *Golpe* (caída de tono y clic).
+  - Caja: *Bordón* (cuerpo frente a bordonera).
+  - Aro: *Cuerpo*.
+  - Charles, platillo y metal: *Resonancia*.
+  - Maracas y pandereta: *Sacudida*.
+  - Güiro: *Raspado*.
+  - Cencerro: *Desafinar*.

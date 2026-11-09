@@ -302,8 +302,8 @@ MainPanel::MainPanel (RitmoProcessor& p) : proc (p), songStrip (p), grid (p), fx
         s.pad.setTooltip (utf8 ("Clic para escuchar · Mayús+clic = acento · la nota MIDI está en la página MIDI"));
         s.pad.onClick = [this, i] { proc.auditionFromUi (i, juce::ModifierKeys::currentModifiers.isShiftDown()); };
         addAndMakeVisible (s.pad);
-        static constexpr const char* ids[5] { "level", "tune", "decay", "tone", "pan" };
-        for (int k = 0; k < 5; ++k)
+        static constexpr const char* ids[6] { "level", "tune", "decay", "tone", "pan", "extra" };
+        for (int k = 0; k < 6; ++k)
         {
             setupKnob (s.knobs[(size_t) k]);
             s.sAtt.push_back (std::make_unique<SliderAttachment> (proc.apvts, RitmoProcessor::pid (i, ids[k]), s.knobs[(size_t) k]));
@@ -442,13 +442,19 @@ void MainPanel::paint (juce::Graphics& g)
     {
         g.setColour (cream.withAlpha (0.6f));
         g.setFont (juce::FontOptions (9.0f, juce::Font::bold));
-        for (auto& s : strips)
-            for (int k = 0; k < 5; ++k)
+        for (int i = 0; i < r78::kNumInst; ++i)
+        {
+            auto& s = strips[(size_t) i];
+            for (int k = 0; k < 6; ++k)
             {
                 auto& kn = s.knobs[(size_t) k];
-                g.drawText (upper (utf8 (kKnobLabels[k])), kn.getX() - 8, kn.getBottom() - 3, kn.getWidth() + 16, 11,
+                juce::String label = utf8 (k < 5 ? kKnobLabels[k] : r78::kExtraName[(size_t) i]);
+                if (label == "Resonancia") label = "Reson.";
+                g.setFont (juce::FontOptions (k < 5 ? 9.0f : 8.0f, juce::Font::bold));
+                g.drawText (upper (label), kn.getX() - 8, kn.getBottom() - (k < 5 ? 3 : 1), kn.getWidth() + 16, 11,
                             juce::Justification::centred);
             }
+        }
     }
 }
 
@@ -504,7 +510,8 @@ void MainPanel::resized()
         auto& s = strips[(size_t) i];
         const int sx = x0 + i * kStripW, y = kPageTop + 4;
         s.pad.setBounds (sx + 3, y, kStripW - 6, 30);
-        s.knobs[0].setBounds (sx + (kStripW - 44) / 2, y + 36, 44, 44);
+        s.knobs[0].setBounds (sx + 4, y + 36, 44, 44);
+        s.knobs[5].setBounds (sx + kStripW - 36, y + 42, 32, 32);
         s.knobs[1].setBounds (sx + 4, y + 92, 36, 36);
         s.knobs[2].setBounds (sx + kStripW - 40, y + 92, 36, 36);
         s.knobs[3].setBounds (sx + 4, y + 140, 36, 36);

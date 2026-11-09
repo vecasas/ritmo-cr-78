@@ -134,7 +134,8 @@ private:
     r78::MasterBus masterBus;
     struct VoiceParamPtrs { std::atomic<float>* level; std::atomic<float>* tune; std::atomic<float>* decay;
                             std::atomic<float>* tone; std::atomic<float>* pan; std::atomic<float>* mute;
-                            std::atomic<float>* send; std::atomic<float>* out; };
+                            std::atomic<float>* send; std::atomic<float>* out;
+                            std::atomic<float>* extra; };
     std::array<VoiceParamPtrs, r78::kNumInst> vp {};
     std::atomic<float>* master = nullptr;
     std::array<std::atomic<int>, r78::kNumInst> pendingPad {};
