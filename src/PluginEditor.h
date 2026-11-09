@@ -54,7 +54,8 @@ private:
 
     juce::TextButton playBtn { "Start / Stop" };
     std::unique_ptr<ChoiceKeys> rhythmKeys, variationKeys, fillKeys;
-    juce::ComboBox lengthBox;
+    juce::ComboBox lengthBox, fillTypeBox;
+    std::unique_ptr<ComboAttachment> fillTypeAtt;
     juce::Slider tempoKnob, swingKnob, accentKnob, masterKnob;
     juce::ToggleButton syncBtn { "Sync DAW" };
     std::array<juce::TextButton, 3> varTabs;

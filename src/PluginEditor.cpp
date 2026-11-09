@@ -127,6 +127,13 @@ MainPanel::MainPanel (RitmoProcessor& p) : proc (p), grid (p), fxPanel (p)
     addAndMakeVisible (lengthBox);
     refreshLengthBox();
 
+    if (auto* pc = dynamic_cast<juce::AudioParameterChoice*> (proc.apvts.getParameter ("fill_type")))
+        fillTypeBox.addItemList (pc->choices, 1);
+    fillTypeBox.setTooltip (utf8 ("Qué suena en el compás de fill: la variación Fill del ritmo, la variación contraria, "
+                                  "un silencio (break) o un redoble de bongó o caja en los dos últimos tiempos"));
+    addAndMakeVisible (fillTypeBox);
+    fillTypeAtt = std::make_unique<ComboAttachment> (proc.apvts, "fill_type", fillTypeBox);
+
     setupKnob (tempoKnob, true); setupKnob (swingKnob); setupKnob (accentKnob); setupKnob (masterKnob, true);
     knobAtts.push_back (std::make_unique<SliderAttachment> (proc.apvts, "tempo", tempoKnob));
     knobAtts.push_back (std::make_unique<SliderAttachment> (proc.apvts, "swing", swingKnob));
@@ -281,6 +288,7 @@ void MainPanel::paint (juce::Graphics& g)
     g.drawText (utf8 ("FILL CADA … COMPASES"), fillKeys->keys.front()->getX(), fillKeys->keys.front()->getY() - 13, 200, 12,
                 juce::Justification::centredLeft);
     g.drawText (utf8 ("LONGITUD"), lengthBox.getX(), lengthBox.getY() - 13, 120, 12, juce::Justification::centredLeft);
+    g.drawText (utf8 ("TIPO DE FILL"), fillTypeBox.getX(), fillTypeBox.getY() - 13, 120, 12, juce::Justification::centredLeft);
 
     // ---- Zona inferior ----
     g.setColour (panel2);
@@ -317,6 +325,7 @@ void MainPanel::resized()
     for (int i = 0; i < (int) fillKeys->keys.size(); ++i)
         fillKeys->keys[(size_t) i]->setBounds (900 + i * 50, kRowA + 120, 48, 30);
     lengthBox.setBounds (1056, kRowA + 66, 150, 24);
+    fillTypeBox.setBounds (1056, kRowA + 126, 150, 24);
     masterKnob.setBounds (kW - kCheek - 110, 2, 50, 46);
 
     // Rejilla

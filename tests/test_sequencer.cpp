@@ -67,6 +67,29 @@ int main()
         CHECK (variationForBar (3, o) == VarB);
     }
 
+    // Redoble de bongó cada 2 compases: semicorcheas en los pasos 8-15 del compás 2.
+    {
+        Pattern p; p.clear(); p.length.store (16); p.stepsPerBeat.store (4);
+        p.set (VarA, (int) Inst::Kick, 0, true);
+        PlayOptions o; o.fillEvery = 2; o.fillType = FillRollBongo;
+        bool ev[kRows];
+        int rollHits = 0;
+        for (long g = 0; g < 32; ++g)
+        {
+            stepEvents (p, g, o, ev);
+            if (ev[(int) Inst::HiBongo]) { ++rollHits; CHECK (g >= 24); }
+            if (g % 16 == 0) CHECK (ev[(int) Inst::Kick]);   // el ritmo sigue sonando
+        }
+        CHECK (rollHits == 8);
+        // Break: solo el primer paso del compás de fill.
+        o.fillType = FillBreak;
+        p.set (VarA, (int) Inst::Kick, 4, true);
+        stepEvents (p, 16 + 4, o, ev);
+        CHECK (! ev[(int) Inst::Kick]);
+        stepEvents (p, 16, o, ev);
+        CHECK (ev[(int) Inst::Kick]);
+    }
+
     std::printf (failures ? "%d fallos\n" : "OK: todas las pruebas pasan\n", failures);
     return failures ? 1 : 0;
 }

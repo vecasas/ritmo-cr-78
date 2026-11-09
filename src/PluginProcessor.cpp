@@ -65,6 +65,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout RitmoProcessor::createLayout
                                                         StringArray { "A", "B", "A+B" }, 0));
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "fill", 1 }, "Fill cada",
                                                         StringArray { "Nunca", "2", "4", "8", "16" }, 0));
+    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "fill_type", 1 }, "Tipo de fill",
+                                                        StringArray { "Fill del ritmo", "A/B", "Break", "Redoble bongo", "Redoble caja" }, 0));
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { "accent", 1 }, "Acento", 0.0f, 1.0f, 0.6f));
     layout.add (std::make_unique<AudioParameterBool> (ParameterID { "sync", 1 }, "Sincronizar con el DAW", true));
 
@@ -207,6 +209,7 @@ void RitmoProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
         static constexpr int fills[] { 0, 2, 4, 8, 16 };
         opts.fillEvery = fills[juce::jlimit (0, 4, (int) apvts.getRawParameterValue ("fill")->load())];
     }
+    opts.fillType = (int) apvts.getRawParameterValue ("fill_type")->load();
     accentAmount = apvts.getRawParameterValue ("accent")->load();
 
     const int spb = juce::jlimit (1, 8, pattern.stepsPerBeat.load());
@@ -265,17 +268,15 @@ void RitmoProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
 
 void RitmoProcessor::fireStep (long g)
 {
+    bool ev[r78::kRows];
+    const int var = r78::stepEvents (pattern, g, opts, ev);
     const int len = juce::jlimit (1, r78::kMaxSteps, pattern.length.load());
-    const int step = (int) (g % len);
-    const long bar = g / len;
-    const int var = r78::variationForBar (bar, opts);
-    const bool acc = pattern.get (var, r78::kAccentRow, step);
     // Con acento suena a nivel completo; sin acento baja según el control "Acento".
-    const float vel = acc ? 1.0f : 1.0f - 0.45f * accentAmount;
+    const float vel = ev[r78::kAccentRow] ? 1.0f : 1.0f - 0.45f * accentAmount;
     for (int i = 0; i < r78::kNumInst; ++i)
-        if (pattern.get (var, i, step))
+        if (ev[i])
             kit.trigger (i, vel, true);
-    currentStep.store (step);
+    currentStep.store ((int) (g % len));
     currentVar.store (var);
 }
 
