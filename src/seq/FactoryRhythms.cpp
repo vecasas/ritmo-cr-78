@@ -35,10 +35,12 @@ const std::vector<RhythmDef>& factoryRhythms()
       "bd x...x...x...x...;sd ....x..x....x...;hh x.x.x.x.x.x.x.x.;ta ....x.......x...;ac x...x...x...x...",
       "bd x...x...x...x...;sd ....x...x.x.x.x.;hh x.x.x.x.........;ac x...x...x...x..." },
     // ---------------------------------------------------------------- New wave / Electro
-    { "Synth Pop", "New Wave", 136, 16, 4,
-      "bd x...x...x...x...;sd ....x.......x...;hh xxxxxxxxxxxxxxxx;ta ....x.......x...;ac ..x...x...x...x.",
-      "bd x...x...x...x.x.;sd ....x.......x...;hh xxxxxxxxxxxxxxxx;ta ....x.......x...;cb ..............x.;ac ..x...x...x...x.",
-      "bd x...x...x...x.x.;sd ....x...x.xxxxxx;hh xxxxxxxx........;ac ..x...x...x...x." },
+    // Base seca de synth pop: bombo en negras, caja en 2 y 4, charles en corcheas.
+    // Con "Redoble bongo" cada 2 compases da el ritmo de los éxitos synth pop de 1980.
+    { "Synth Pop", "New Wave", 127, 16, 4,
+      "bd x...x...x...x...;sd ....x.......x...;hh x.x.x.x.x.x.x.x.",
+      "bd x...x...x...x.x.;sd ....x.......x...;hh x.x.x.x.x.x.x.x.;ta ....x.......x...",
+      "bd x...x...x...x...;sd ....x.......x...;hh x.x.x.x.x.x.x.x." },
     { "New Wave", "New Wave", 128, 16, 4,
       "bd x..x..x...x.....;sd ....x.......x...;hh x.xxx.xxx.xxx.xx;rs ......x.......x.;ac x...x...x...x...",
       "bd x..x..x...x..x..;sd ....x.......x...;hh x.xxx.xxx.xxx.xx;mb ..x.......x.....;ac x...x...x...x...",
