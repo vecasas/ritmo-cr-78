@@ -19,8 +19,32 @@ En Windows copia `Ritmo CR-78.vst3` a `C:\Program Files\Common Files\VST3\`.
 ## Hoja de ruta
 
 1. Esqueleto + CI (hecho)
-2. Voces sintetizadas
+2. Voces sintetizadas (hecho)
 3. Secuenciador y ritmos
 4. Mezclador y efectos
 5. Interfaz gráfica
 6. MIDI, salidas múltiples y presets
+
+## Instrumentos (fase 2)
+
+14 voces sintetizadas, sin samples, cada una con Nivel, Afinación (±12 st), Decay, Tono, Pan y Mute:
+
+| Instrumento | Nota MIDI | Síntesis |
+|---|---|---|
+| Bombo | 36 | senoide percutida con caída de tono y clic |
+| Aro | 37 | dos senoides cortas saturadas |
+| Caja | 38 | dos senoides + ruido filtrado (bordón) |
+| Charles | 42 | banco metálico + ruido, paso alto |
+| Platillo | 49 | banco metálico + ruido, decay largo |
+| Metal | 51 | banco metálico, banda media |
+| Pandereta | 54 | ruido modulado por banco metálico |
+| Cencerro | 56 | dos cuadradas filtradas, envolvente doble |
+| Bongó agudo / grave | 60 / 61 | senoide percutida |
+| Conga | 64 | senoide percutida con caída de tono |
+| Maracas | 70 | ráfaga de ruido agudo |
+| Güiro | 73 | ruido en banda con raspado |
+| Claves | 75 | senoide aguda muy corta |
+
+Velocidad MIDI > 100 = acento. En la interfaz, Mayús+clic en un pad = acento.
+
+`render_demo <carpeta>` genera `01_instrumentos.wav` y `02_ritmo_demo.wav` para escuchar las voces sin DAW.

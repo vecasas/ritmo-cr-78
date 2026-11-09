@@ -1,17 +1,34 @@
 #pragma once
 #include "PluginProcessor.h"
 
-class Ritmo78Editor : public juce::AudioProcessorEditor
+// Interfaz provisional de la fase 2: una columna por instrumento con pad de prueba
+// y sus cinco controles. La interfaz definitiva llega en la fase 5.
+class RitmoEditor : public juce::AudioProcessorEditor
 {
 public:
-    explicit Ritmo78Editor (Ritmo78Processor&);
+    explicit RitmoEditor (RitmoProcessor&);
     void paint (juce::Graphics&) override;
     void resized() override;
 
 private:
-    Ritmo78Processor& proc;
-    juce::Slider masterKnob;
-    juce::AudioProcessorValueTreeState::SliderAttachment masterAttach;
+    using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
+    using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;
 
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (Ritmo78Editor)
+    struct Strip
+    {
+        juce::TextButton pad;
+        juce::ToggleButton mute { "M" };
+        std::array<juce::Slider, 5> knobs;
+        std::vector<std::unique_ptr<SliderAttachment>> sAtt;
+        std::unique_ptr<ButtonAttachment> mAtt;
+    };
+
+    RitmoProcessor& proc;
+    std::array<Strip, r78::kNumInst> strips;
+    juce::Slider masterKnob;
+    std::unique_ptr<SliderAttachment> masterAtt;
+
+    static constexpr const char* paramNames[5] { "level", "tune", "decay", "tone", "pan" };
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (RitmoEditor)
 };
