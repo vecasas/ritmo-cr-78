@@ -23,11 +23,14 @@ public:
         for (int r = 0; r < r78::kRows; ++r)
         {
             const bool accentRow = r == r78::kAccentRow;
-            g.setColour (juce::Colour (0xffeadfca).withAlpha (0.8f));
+            // Filas de un grupo cancelado: atenuadas.
+            const bool cancelled = ! accentRow && proc.apvts.getRawParameterValue ("cancel_" + juce::String (r78::kCancelGroupOf[r]))->load() > 0.5f;
+            g.setColour (juce::Colour (0xffeadfca).withAlpha (cancelled ? 0.3f : 0.8f));
             const juce::String name = accentRow ? juce::String ("Acento")
                                                 : juce::String (juce::CharPointer_UTF8 (r78::kInstInfo[(size_t) r].name));
             g.drawText (vintage::upper (name), 0, r * cellH, labelW - 8, cellH, juce::Justification::centredRight);
-            const juce::Colour onC = rowColour ? rowColour (r) : (accentRow ? juce::Colour (0xffe0b040) : juce::Colour (0xffd9822b));
+            juce::Colour onC = rowColour ? rowColour (r) : (accentRow ? juce::Colour (0xffe0b040) : juce::Colour (0xffd9822b));
+            if (cancelled) onC = onC.withSaturation (0.15f).darker (0.4f);
 
             for (int s = 0; s < len; ++s)
             {

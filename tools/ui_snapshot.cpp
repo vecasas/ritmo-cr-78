@@ -21,6 +21,10 @@ int main (int argc, char** argv)
     proc.currentStep.store (4);
 
     // Modo usuario o canción: unos patrones de ejemplo y una canción corta.
+    // Variable R78_SNAP_CANCEL=n: muestra cancelado el grupo n.
+    if (auto* c = std::getenv ("R78_SNAP_CANCEL"))
+        if (auto* p = proc.apvts.getParameter ("cancel_" + juce::String (c))) p->setValueNotifyingHost (1.0f);
+
     const int mode = argc > 4 ? juce::String (argv[4]).getIntValue() : 0;
     if (mode > 0)
     {

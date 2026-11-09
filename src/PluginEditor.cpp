@@ -256,6 +256,40 @@ MainPanel::MainPanel (RitmoProcessor& p) : proc (p), songStrip (p), grid (p), fx
                 for (int s = 0; s < r78::kMaxSteps; ++s) ep.set (v, r, s, clip.cells[v][r][s]);
         refreshLengthBox(); refreshSlotKeys(); grid.repaint();
     };
+    // ---- Cancelar voz: quitan grupos del ritmo en directo ----
+    static const char* cancelLabels[r78::kCancelGroups] { "Bombo", "Caja", "Charles", "Bongós", "Claves", "Maracas" };
+    static const char* cancelTips[r78::kCancelGroups] { "Quita el bombo del ritmo", "Quita caja y aro del ritmo",
+        "Quita charles, platillo y metal del ritmo", "Quita bongós y conga del ritmo", "Quita claves y cencerro del ritmo",
+        "Quita maracas, güiro y pandereta del ritmo" };
+    for (int c = 0; c < r78::kCancelGroups; ++c)
+    {
+        auto& k = cancelKeys[(size_t) c];
+        k.setButtonText (utf8 (cancelLabels[c]));
+        k.setClickingTogglesState (true);
+        k.getProperties().set ("led", true);
+        k.getProperties().set ("keyColour", (juce::int64) juce::Colour (0xff8c8a82).getARGB());
+        k.setTooltip (utf8 (cancelTips[c]) + utf8 (" (los pads y el MIDI siguen sonando)"));
+        k.onClick = [this] { grid.repaint(); };
+        addAndMakeVisible (k);
+        cancelAtts.push_back (std::make_unique<ButtonAttachment> (proc.apvts, "cancel_" + juce::String (c), k));
+    }
+
+    // ---- Fade in / fade out ----
+    for (auto* b : { &fadeInBtn, &fadeOutBtn })
+    {
+        b->getProperties().set ("led", true);
+        b->getProperties().set ("keyColour", (juce::int64) cream.getARGB());
+        addAndMakeVisible (*b);
+    }
+    fadeInBtn.setTooltip (utf8 ("Sube el volumen poco a poco; si la caja está parada, la arranca"));
+    fadeOutBtn.setTooltip (utf8 ("Baja el volumen poco a poco y para la caja al llegar a silencio"));
+    fadeInBtn.onClick = [this] { proc.requestFade (+1); };
+    fadeOutBtn.onClick = [this] { proc.requestFade (-1); };
+    setupKnob (fadeKnob);
+    fadeKnob.setTextValueSuffix (" s");
+    fadeKnob.setTooltip (utf8 ("Duración del fade"));
+    knobAtts.push_back (std::make_unique<SliderAttachment> (proc.apvts, "fade_time", fadeKnob));
+
     grid.rowColour = [] (int r) { return r == r78::kAccentRow ? ledOn : instColour (r); };
     addAndMakeVisible (grid);
 
@@ -323,6 +357,12 @@ void MainPanel::timerCallback()
     if (proc.mode() != shownMode) refreshMode();
     if (shownMode == 1 && (proc.userSlot() != shownSlot || ++slotRefreshTick % 8 == 0)) refreshSlotKeys();
     if (&proc.editPattern() != shownEdit) { shownEdit = &proc.editPattern(); refreshLengthBox(); grid.repaint(); }
+    if (const int fd = proc.fadeDirection.load(); fd != shownFade)
+    {
+        shownFade = fd;
+        fadeInBtn.setToggleState (fd > 0, juce::dontSendNotification);
+        fadeOutBtn.setToggleState (fd < 0, juce::dontSendNotification);
+    }
     const bool playing = proc.currentStep.load() >= 0;
     if (playing != lastPlaying) { lastPlaying = playing; repaint(); }
 }
@@ -374,7 +414,8 @@ void MainPanel::paint (juce::Graphics& g)
     g.setFont (juce::FontOptions (9.0f, juce::Font::bold));
     g.drawText ("MODO", modeKeys->keys.front()->getX(), 2, 200, 12, juce::Justification::centredLeft);
     drawSectionLabel (g, { 720, kRowA - 2, kW - kCheek - 14 - 720, 14 }, utf8 ("TRANSPORTE"));
-    drawSectionLabel (g, { kCheek + 14, kGridLabel, kW - 2 * kCheek - 28, 14 },
+    drawSectionLabel (g, { cancelKeys[0].getX(), kGridLabel, kW - kCheek - 14 - cancelKeys[0].getX(), 14 }, utf8 ("CANCELAR VOZ"));
+    drawSectionLabel (g, { kCheek + 14, kGridLabel, cancelKeys[0].getX() - kCheek - 30, 14 },
                       utf8 ("PATRÓN · clic o arrastrar para programar · fila roja = acento"));
 
     g.setColour (cream.withAlpha (0.75f));
@@ -388,6 +429,7 @@ void MainPanel::paint (juce::Graphics& g)
     g.drawText (utf8 ("FILL CADA … COMPASES"), fillKeys->keys.front()->getX(), fillKeys->keys.front()->getY() - 13, 200, 12,
                 juce::Justification::centredLeft);
     g.drawText (utf8 ("LONGITUD"), lengthBox.getX(), lengthBox.getY() - 13, 120, 12, juce::Justification::centredLeft);
+    g.drawText (utf8 ("FADE · DURACIÓN"), fadeInBtn.getX(), fadeInBtn.getY() - 13, 160, 12, juce::Justification::centredLeft);
     g.drawText (utf8 ("TIPO DE FILL"), fillTypeBox.getX(), fillTypeBox.getY() - 13, 120, 12, juce::Justification::centredLeft);
 
     // ---- Zona inferior ----
@@ -439,6 +481,11 @@ void MainPanel::resized()
     clearBtn.setBounds (kCheek + 14 + StepGrid::labelW + 3 * 112 + 12, kGridTabs + 6, 80, 20);
     copyBtn.setBounds (clearBtn.getRight() + 8, kGridTabs + 6, 80, 20);
     pasteBtn.setBounds (copyBtn.getRight() + 8, kGridTabs + 6, 80, 20);
+    for (int c = 0; c < r78::kCancelGroups; ++c)
+        cancelKeys[(size_t) c].setBounds (kW - kCheek - 14 - (r78::kCancelGroups - c) * 72, kGridTabs - 2, 70, 28);
+    fadeInBtn.setBounds (720, kRowA + 166, 70, 30);
+    fadeOutBtn.setBounds (794, kRowA + 166, 70, 30);
+    fadeKnob.setBounds (868, kRowA + 166, 30, 30);
     grid.setBounds (kCheek + 14, kGridTop, kW - 2 * kCheek - 28, kGridH);
 
     // Páginas

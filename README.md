@@ -96,3 +96,8 @@ Con la caja en marcha en modo Usuario o Canción, los pads graban en tiempo real
 
 ![Patrones de usuario](docs/interfaz_usuario.png)
 ![Canción](docs/interfaz_cancion.png)
+
+## Cancelar voz y fade (fase 6)
+
+- **Cancelar voz**: seis teclas encima de la rejilla quitan del ritmo un grupo de instrumentos sin borrar el patrón: bombo · caja y aro · charles, platillo y metal · bongós y conga · claves y cencerro · maracas, güiro y pandereta. Las filas canceladas se ven atenuadas. Los pads y las notas MIDI siguen sonando. Cada tecla es un parámetro automatizable.
+- **Fade in / Fade out**: suben o bajan el volumen en el tiempo del mando de duración (1–30 s). Fade in con la caja parada la arranca desde silencio; el fade out la para al llegar a cero.

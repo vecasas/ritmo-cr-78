@@ -124,5 +124,49 @@ int main (int argc, char** argv)
         writeWav (out + "/04_ritmos_fabrica.wav", l3, r3, sr);
     }
     std::puts ("ok");
+    // 5) Fade in, Cancelar voz y fade out sobre Synth Pop (16 compases):
+    //    compases 1-4 fade in, 7-8 sin bombo, 9-10 sin charles/platillo, 13-16 fade out.
+    {
+        const auto& list = r78::factoryRhythms();
+        const r78::RhythmDef* d = &list[0];
+        for (auto& r : list) if (std::string (r.name) == "Synth Pop") d = &r;
+        r78::DrumKit kit;
+        kit.setSampleRate ((float) sr);
+        r78::Pattern pat;
+        r78::loadRhythm (pat, *d);
+        r78::StepClock clock;
+        clock.locate (0.0, d->stepsPerBeat);
+        r78::PlayOptions o;
+        const double beatsPerBar = (double) d->length / d->stepsPerBeat;
+        const double secPerBar = beatsPerBar * 60.0 / d->bpm;
+        const double ppqPerSample = d->bpm / 60.0 / sr;
+        r78::Fader fader;
+        fader.start (+1, (float) (4 * secPerBar), sr, true);
+        bool fadingOut = false, stopped = false;
+        std::vector<float> l5, r5;
+        double ppq = 0.0;
+        while (! stopped && ppq < beatsPerBar * 17.0)
+        {
+            const long bar = (long) (ppq / beatsPerBar);
+            if (bar >= 12 && ! fadingOut) { fader.start (-1, (float) (4 * secPerBar), sr, false); fadingOut = true; }
+            bool cancel[r78::kCancelGroups] {};
+            cancel[0] = bar == 6 || bar == 7;
+            cancel[2] = bar == 8 || bar == 9;
+            for (long g; (g = clock.poll (ppq, 0.5f)) >= 0;)
+            {
+                bool ev[r78::kRows];
+                r78::stepEvents (pat, g, o, ev);
+                const float vel = ev[r78::kAccentRow] ? 1.0f : 0.73f;
+                for (int i = 0; i < r78::kNumInst; ++i)
+                    if (ev[i] && ! cancel[r78::kCancelGroupOf[i]]) kit.trigger (i, vel, true);
+            }
+            float l, r; kit.process (l, r);
+            stopped = fader.tick();
+            l5.push_back (l * 0.5f * fader.gain); r5.push_back (r * 0.5f * fader.gain);
+            ppq += ppqPerSample;
+        }
+        writeWav (out + "/09_fade_y_cancelar.wav", l5, r5, sr);
+    }
+
     return 0;
 }
