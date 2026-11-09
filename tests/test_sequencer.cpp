@@ -1,5 +1,6 @@
 // Pruebas del secuenciador sin JUCE. Sale con código 1 si algo falla.
 #include "../src/seq/Sequencer.h"
+#include "../src/seq/MidiMap.h"
 #include <cstdio>
 
 static int failures = 0;
@@ -134,6 +135,29 @@ int main()
         CHECK (f.gain == 0.0f);
         // Todos los instrumentos tienen grupo de cancelar válido.
         for (int i = 0; i < kNumInst; ++i) CHECK (kCancelGroupOf[i] >= 0 && kCancelGroupOf[i] < kCancelGroups);
+    }
+
+    // MIDI: mapa por defecto, aprender con intercambio y modos de velocidad.
+    {
+        MidiMap m;
+        CHECK (m.instFor (36) == (int) Inst::Kick);
+        CHECK (m.instFor (38) == (int) Inst::Snare);
+        CHECK (m.instFor (0) == -1);
+        m.assign ((int) Inst::Kick, 38);                 // la caja tenía 38: se intercambian
+        CHECK (m.instFor (38) == (int) Inst::Kick);
+        CHECK (m.instFor (36) == (int) Inst::Snare);
+        m.assign ((int) Inst::Cowbell, 99);
+        CHECK (m.instFor (99) == (int) Inst::Cowbell && m.instFor (56) == -1);
+        m.reset();
+        CHECK (m.instFor (36) == (int) Inst::Kick && m.instFor (56) == (int) Inst::Cowbell);
+
+        float lv; bool ac;
+        midiHit (64, VelDynamic, 100, false, lv, ac);   CHECK (! ac && lv > 0.5f && lv < 0.51f);
+        midiHit (110, VelDynamic, 100, false, lv, ac);  CHECK (ac);
+        midiHit (64, VelDynamic, 100, true, lv, ac);    CHECK (ac);
+        midiHit (20, VelTwoLevels, 100, false, lv, ac); CHECK (! ac && lv == 1.0f);
+        midiHit (127, VelFixed, 100, false, lv, ac);    CHECK (! ac && lv == 1.0f);
+        midiHit (1, VelFixed, 100, true, lv, ac);       CHECK (ac);
     }
 
     std::printf (failures ? "%d fallos\n" : "OK: todas las pruebas pasan\n", failures);

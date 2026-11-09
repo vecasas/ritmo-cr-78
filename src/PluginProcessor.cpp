@@ -111,6 +111,18 @@ juce::AudioProcessorValueTreeState::ParameterLayout RitmoProcessor::createLayout
                                                         StringArray { "Fill del ritmo", "A/B", "Break", "Redoble bongo", "Redoble caja" }, 0));
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { "accent", 1 }, "Acento", 0.0f, 1.0f, 0.6f));
     layout.add (std::make_unique<AudioParameterBool> (ParameterID { "sync", 1 }, "Sincronizar con el DAW", true));
+    // MIDI
+    layout.add (std::make_unique<AudioParameterInt> (ParameterID { "midi_in_ch", 1 }, "Canal MIDI de entrada", 0, 16, 0,
+        AudioParameterIntAttributes().withStringFromValueFunction ([] (int v, int) { return v == 0 ? String ("Omni") : String (v); })));
+    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "midi_vel", 1 }, "Velocidad MIDI",
+        StringArray { String (CharPointer_UTF8 ("Dinámica")), "Dos niveles", "Fija" }, 0));
+    layout.add (std::make_unique<AudioParameterInt> (ParameterID { "midi_acc_thr", 1 }, "Umbral de acento", 1, 127, 100));
+    layout.add (std::make_unique<AudioParameterInt> (ParameterID { "midi_acc_note", 1 }, "Nota de acento", -1, 127, -1,
+        AudioParameterIntAttributes().withStringFromValueFunction ([] (int v, int) {
+            return v < 0 ? String ("Ninguna") : MidiMessage::getMidiNoteName (v, true, true, 3) + " (" + String (v) + ")"; })));
+    layout.add (std::make_unique<AudioParameterBool> (ParameterID { "midi_out", 1 }, "Enviar el ritmo por MIDI", false));
+    layout.add (std::make_unique<AudioParameterInt> (ParameterID { "midi_out_ch", 1 }, "Canal MIDI de salida", 1, 16, 10));
+
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { "fade_time", 1 }, "Tiempo de fade",
                                                        NormalisableRange<float> (1.0f, 30.0f, 0.1f, 0.5f), 8.0f));
     {
@@ -296,6 +308,8 @@ void RitmoProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
         if (padHits[(size_t) i])
         {
             kit.trigger (i, 1.0f, padHits[(size_t) i] == 2);
+            blockPos = 0;
+            sendMidiHit (i, padHits[(size_t) i] == 2, 0);
             if (running && curMode != 0) recordPad (i, ppq, opts.swing);   // grabación en tiempo real
         }
     const double ppqPerSample = bpm / 60.0 / sampleRate;
@@ -304,19 +318,47 @@ void RitmoProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
     auto* L = buffer.getWritePointer (0);
     auto* R = buffer.getWritePointer (1);
 
+    const int inCh = (int) p ("midi_in_ch");
+    const int velMode = (int) p ("midi_vel");
+    const int accThr = (int) p ("midi_acc_thr");
+    const int accNote = (int) p ("midi_acc_note");
+    if (accNote < 0) accentHeld = false;
+    midiOutOn = p ("midi_out") > 0.5f;
+    midiOutCh = (int) p ("midi_out_ch");
+
     auto midiIt = midi.cbegin();
     for (int n = 0; n < buffer.getNumSamples(); ++n)
     {
         for (; midiIt != midi.cend() && (*midiIt).samplePosition <= n; ++midiIt)
         {
             const auto msg = (*midiIt).getMessage();
-            if (msg.isNoteOn())
+            if (inCh != 0 && msg.getChannel() != inCh) continue;
+            const int note = msg.getNoteNumber();
+            if (msg.isNoteOff() && note == accNote) { accentHeld = false; continue; }
+            if (! msg.isNoteOn()) continue;
+            lastMidiNote.store (note);
+            if (const int li = learnInst.load(); li >= 0)            // aprender: la nota pasa a este instrumento
             {
-                const int inst = kit.instForNote (msg.getNoteNumber());
-                // Velocidad > 100 se interpreta como acento.
-                kit.trigger (inst, msg.getFloatVelocity(), msg.getVelocity() > 100);
+                midiMap.assign (li, note);
+                learnInst.store (-1);
             }
+            if (note == accNote) { accentHeld = true; continue; }    // la nota de acento no suena
+            const int inst = midiMap.instFor (note);
+            if (inst < 0) continue;
+            // También acentúa si la nota de acento llega en la misma muestra (acorde).
+            bool accentNow = accentHeld;
+            for (const auto m2 : midi)
+                if (m2.samplePosition == (*midiIt).samplePosition && m2.getMessage().isNoteOn()
+                    && m2.getMessage().getNoteNumber() == accNote) accentNow = true;
+            float lv; bool ac;
+            r78::midiHit (msg.getVelocity(), velMode, accThr, accentNow, lv, ac);
+            kit.trigger (inst, lv, ac);
         }
+        blockPos = n;
+        // Note-off de la salida MIDI.
+        for (int i = 0; i < r78::kNumInst; ++i)
+            if (noteOffIn[(size_t) i] > 0 && --noteOffIn[(size_t) i] == 0)
+                midiOut.addEvent (juce::MidiMessage::noteOff (midiOutCh, noteOutNum[(size_t) i]), n);
         if (running)
         {
             for (long g; (g = clock.poll (ppq, opts.swing)) >= 0;)
@@ -336,6 +378,9 @@ void RitmoProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
     }
     internalPpq = ppq;
     expectedPpq = ppq;
+    // La salida MIDI sustituye a la entrada (no se reenvía lo recibido).
+    midi.swapWith (midiOut);
+    midiOut.clear();
     compGainReduction.store (masterBus.comp.gainReductionDb);
     fadeDirection.store (fader.dir);
 }
@@ -373,10 +418,26 @@ void RitmoProcessor::fireStep (long g)
     const float vel = ev[r78::kAccentRow] ? 1.0f : 1.0f - 0.45f * accentAmount;
     for (int i = 0; i < r78::kNumInst; ++i)
         if (ev[i] && cancelParams[(size_t) r78::kCancelGroupOf[i]]->load() < 0.5f)   // Cancelar voz
+        {
             kit.trigger (i, vel, true);
+            sendMidiHit (i, ev[r78::kAccentRow], blockPos);
+        }
     currentStep.store ((int) (local % len));
     currentVar.store (var);
     playingPattern.store (pat);
+}
+
+// Envía un golpe por la salida MIDI (acento = velocidad 127, normal = 90) con un note-off a los 30 ms.
+void RitmoProcessor::sendMidiHit (int inst, bool accent, int samplePos)
+{
+    if (! midiOutOn) return;
+    const int note = midiMap.note[(size_t) inst].load();
+    if (note < 0 || note > 127) return;
+    if (noteOffIn[(size_t) inst] > 0)
+        midiOut.addEvent (juce::MidiMessage::noteOff (midiOutCh, noteOutNum[(size_t) inst]), samplePos);
+    midiOut.addEvent (juce::MidiMessage::noteOn (midiOutCh, note, (juce::uint8) (accent ? 127 : 90)), samplePos);
+    noteOutNum[(size_t) inst] = note;
+    noteOffIn[(size_t) inst] = juce::jmax (1, (int) (getSampleRate() * 0.03));
 }
 
 // Graba un golpe de pad en el paso más cercano del patrón que está sonando.
@@ -414,6 +475,9 @@ void RitmoProcessor::getStateInformation (juce::MemoryBlock& dest)
     for (int i = 0; i < songLength.load(); ++i) songItems.add (juce::String (song[(size_t) i].load()));
     state.setProperty ("song", songItems.joinIntoString (","), nullptr);
     state.setProperty ("loadedRhythm", loadedRhythm, nullptr);
+    juce::StringArray notes;
+    for (auto& nn : midiMap.note) notes.add (juce::String (nn.load()));
+    state.setProperty ("notemap", notes.joinIntoString (","), nullptr);
     if (auto xml = state.createXml())
         copyXmlToBinary (*xml, dest);
 }
@@ -438,6 +502,10 @@ void RitmoProcessor::setStateInformation (const void* data, int size)
             for (auto& it : items)
                 if (it.isNotEmpty() && n < kSongSteps) song[(size_t) n++].store (it.getIntValue());
             songLength.store (n);
+            midiMap.reset();
+            const auto nm = juce::StringArray::fromTokens (state["notemap"].toString(), ",", "");
+            if (nm.size() == r78::kNumInst)
+                for (int i = 0; i < r78::kNumInst; ++i) midiMap.note[(size_t) i].store (juce::jlimit (-1, 127, nm[i].getIntValue()));
         }
 }
 

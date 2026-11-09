@@ -101,3 +101,13 @@ Con la caja en marcha en modo Usuario o Canción, los pads graban en tiempo real
 
 - **Cancelar voz**: seis teclas encima de la rejilla quitan del ritmo un grupo de instrumentos sin borrar el patrón: bombo · caja y aro · charles, platillo y metal · bongós y conga · claves y cencerro · maracas, güiro y pandereta. Las filas canceladas se ven atenuadas. Los pads y las notas MIDI siguen sonando. Cada tecla es un parámetro automatizable.
 - **Fade in / Fade out**: suben o bajan el volumen en el tiempo del mando de duración (1–30 s). Fade in con la caja parada la arranca desde silencio; el fade out la para al llegar a cero.
+
+## MIDI (fase 6)
+
+Página **MIDI** (pestaña junto a Efectos y máster):
+
+- **Entrada**: canal (Omni o 1–16) y modo de velocidad. *Dinámica*: el volumen sigue a la velocidad y hay acento por encima del umbral. *Dos niveles*: normal o acento, como el secuenciador. *Fija*: siempre igual. La **nota de acento** acentúa los golpes mientras está pulsada o si llega a la vez, y no dispara ningún instrumento.
+- **Mapa de notas**: cada instrumento tiene su nota (por defecto, General MIDI). Pulsa **Aprender** y toca una nota para asignarla; si otro instrumento la tenía, se intercambian. El mapa se guarda con el proyecto.
+- **Salida**: con *Enviar el ritmo* activo, cada golpe del secuenciador y de los pads sale como nota MIDI (acento = velocidad 127, normal = 90) por el canal elegido (10 por defecto). En la app standalone va al puerto MIDI elegido en Opciones.
+
+![MIDI](docs/interfaz_midi.png)

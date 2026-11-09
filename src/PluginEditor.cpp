@@ -127,7 +127,7 @@ void MainPanel::refreshSlotKeys()
     }
 }
 
-MainPanel::MainPanel (RitmoProcessor& p) : proc (p), songStrip (p), grid (p), fxPanel (p)
+MainPanel::MainPanel (RitmoProcessor& p) : proc (p), songStrip (p), grid (p), fxPanel (p), midiPanel (p)
 {
     // ---- Modo: fábrica, usuario o canción ----
     modeKeys = std::make_unique<ChoiceKeys> (*this, proc.apvts, "mode", [] (int i) { return i == 0 ? cream : i == 1 ? mustard : orange; });
@@ -299,7 +299,7 @@ MainPanel::MainPanel (RitmoProcessor& p) : proc (p), songStrip (p), grid (p), fx
         auto& s = strips[(size_t) i];
         s.pad.setButtonText (utf8 (r78::kInstInfo[(size_t) i].name));
         s.pad.getProperties().set ("keyColour", (juce::int64) instColour (i).getARGB());
-        s.pad.setTooltip (utf8 ("Clic para escuchar · Mayús+clic = acento"));
+        s.pad.setTooltip (utf8 ("Clic para escuchar · Mayús+clic = acento · la nota MIDI está en la página MIDI"));
         s.pad.onClick = [this, i] { proc.auditionFromUi (i, juce::ModifierKeys::currentModifiers.isShiftDown()); };
         addAndMakeVisible (s.pad);
         static constexpr const char* ids[5] { "level", "tune", "decay", "tone", "pan" };
@@ -317,8 +317,9 @@ MainPanel::MainPanel (RitmoProcessor& p) : proc (p), songStrip (p), grid (p), fx
     }
 
     addChildComponent (fxPanel);
-    const char* pages[2] { "Instrumentos", "Efectos y máster" };
-    for (int t = 0; t < 2; ++t)
+    addChildComponent (midiPanel);
+    const char* pages[3] { "Instrumentos", "Efectos y máster", "MIDI" };
+    for (int t = 0; t < 3; ++t)
     {
         auto& b = pageTabs[(size_t) t];
         b.setButtonText (utf8 (pages[t]));
@@ -345,6 +346,7 @@ void MainPanel::showPage (int newPage)
         for (auto& k : st.knobs) k.setVisible (page == 0);
     }
     fxPanel.setVisible (page == 1);
+    midiPanel.setVisible (page == 2);
     pageTabs[(size_t) page].setToggleState (true, juce::dontSendNotification);
     repaint();
 }
@@ -491,6 +493,7 @@ void MainPanel::resized()
     // Páginas
     pageTabs[0].setBounds (kCheek + 14, kPageTabs - 4, 130, 30);
     pageTabs[1].setBounds (kCheek + 150, kPageTabs - 4, 160, 30);
+    pageTabs[2].setBounds (kCheek + 316, kPageTabs - 4, 90, 30);
 
     // Tiras: pad, NIVEL grande, Afinar/Decay, Tono/Pan, Mute/FX
     const int x0 = kCheek + 12 + ((kW - 2 * kCheek - 24) - kStripW * r78::kNumInst) / 2;
@@ -508,6 +511,7 @@ void MainPanel::resized()
         s.send.setBounds (sx + 52, y + 190, 32, 20);
     }
     fxPanel.setBounds (kCheek + 12, kPageTop, kW - 2 * kCheek - 24, kH - kPageTop - 8);
+    midiPanel.setBounds (fxPanel.getBounds().reduced (4, 4));
 }
 
 // ------------------------------------------------------------------ Editor escalable

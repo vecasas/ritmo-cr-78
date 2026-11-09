@@ -2,6 +2,7 @@
 #include <JuceHeader.h>
 #include "dsp/Voices.h"
 #include "seq/Sequencer.h"
+#include "seq/MidiMap.h"
 #include "fx/Effects.h"
 
 // Ritmo CR-78: caja de ritmos analógica modelada (diseño propio).
@@ -24,7 +25,7 @@ public:
 
     const juce::String getName() const override { return JucePlugin_Name; }
     bool acceptsMidi() const override { return true; }
-    bool producesMidi() const override { return false; }
+    bool producesMidi() const override { return true; }
     bool isMidiEffect() const override { return false; }
     double getTailLengthSeconds() const override { return 3.0; }
 
@@ -42,6 +43,11 @@ public:
     // Fade in (+1) o fade out (-1) desde la interfaz. El fade in arranca la caja si está parada.
     void requestFade (int dir);
     std::atomic<int> fadeDirection { 0 };   // para los LED: +1, -1 o 0
+
+    // MIDI: mapa de notas (editable con "aprender") y aprendizaje en curso.
+    r78::MidiMap midiMap;
+    std::atomic<int> learnInst { -1 };      // instrumento esperando nota (-1 = ninguno)
+    std::atomic<int> lastMidiNote { -1 };   // última nota recibida, para la interfaz
 
     // Secuenciador. Modo 0 = ritmos de fábrica (copia editable en `pattern`),
     // modo 1 = patrones de usuario, modo 2 = canción (cadena de patrones de usuario).
@@ -91,6 +97,15 @@ private:
     r78::Fader fader;
     std::atomic<int> fadeRequest { 0 };
     std::array<std::atomic<float>*, r78::kCancelGroups> cancelParams {};
+    // Salida MIDI del ritmo: golpes de este bloque y notas pendientes de apagar.
+    void sendMidiHit (int inst, bool accent, int samplePos);
+    juce::MidiBuffer midiOut;
+    std::array<int, r78::kNumInst> noteOffIn {};   // muestras hasta el note-off (0 = ninguna)
+    std::array<int, r78::kNumInst> noteOutNum {};  // nota enviada, para apagar la misma
+    int midiOutCh = 10;
+    bool midiOutOn = false;
+    int blockPos = 0;
+    bool accentHeld = false;                              // muestra actual dentro del bloque
 
     void updateFxParams();
     float p (const char* id) const { return apvts.getRawParameterValue (id)->load(); }

@@ -30,7 +30,7 @@ juce_add_plugin(RitmoCR78
     PRODUCT_NAME "Ritmo CR-78"
     IS_SYNTH TRUE
     NEEDS_MIDI_INPUT TRUE
-    NEEDS_MIDI_OUTPUT FALSE
+    NEEDS_MIDI_OUTPUT TRUE
     IS_MIDI_EFFECT FALSE
     EDITOR_WANTS_KEYBOARD_FOCUS FALSE
     COPY_PLUGIN_AFTER_BUILD FALSE)
@@ -43,6 +43,8 @@ target_sources(RitmoCR78 PRIVATE
     src/dsp/DspUtils.h
     src/dsp/Voices.h
     src/seq/Sequencer.h
+    src/seq/MidiMap.h
+    src/MidiPanel.h
     src/seq/FactoryRhythms.cpp
     src/StepGrid.h
     src/SongStrip.h
@@ -81,7 +83,7 @@ if(R78_UI_SNAPSHOT)
     target_sources(ui_snapshot PRIVATE tools/ui_snapshot.cpp src/PluginProcessor.cpp src/PluginEditor.cpp src/seq/FactoryRhythms.cpp)
     target_include_directories(ui_snapshot PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/RitmoCR78_artefacts/JuceLibraryCode)
     target_compile_definitions(ui_snapshot PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0
-        JucePlugin_Name="Ritmo CR-78" JucePlugin_IsSynth=1 JucePlugin_WantsMidiInput=1 JucePlugin_ProducesMidiOutput=0
+        JucePlugin_Name="Ritmo CR-78" JucePlugin_IsSynth=1 JucePlugin_WantsMidiInput=1 JucePlugin_ProducesMidiOutput=1
         JucePlugin_IsMidiEffect=0 JUCE_STANDALONE_APPLICATION=1)
     juce_generate_juce_header(ui_snapshot)
     target_link_libraries(ui_snapshot PRIVATE juce::juce_audio_utils juce::juce_dsp juce::juce_recommended_config_flags)
