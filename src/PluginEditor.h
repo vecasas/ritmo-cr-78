@@ -4,6 +4,7 @@
 #include "StepGrid.h"
 #include "FxPanel.h"
 #include "SongStrip.h"
+#include "MidiPanel.h"
 
 // Grupo de teclas con LED enlazado a un parámetro de elección (ritmo, variación, fill).
 class ChoiceKeys : private juce::Timer
@@ -77,7 +78,8 @@ private:
     juce::TextButton clearBtn { "Borrar" };
     StepGrid grid;
     FxPanel fxPanel;
-    std::array<juce::TextButton, 2> pageTabs;
+    MidiPanel midiPanel;
+    std::array<juce::TextButton, 3> pageTabs;
     int page = 0;
     float shownGr = 0.0f;
     bool lastPlaying = false;
