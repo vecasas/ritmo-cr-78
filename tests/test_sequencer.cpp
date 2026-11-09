@@ -118,6 +118,24 @@ int main()
         CHECK (songStep (c4, 0, 1, [&loopOnly] (int i) { return loopOnly[i]; }, lenOf, local) == kSongNone);
     }
 
+    // Fade: sube de 0 a 1 en el tiempo pedido y el fade out avisa al terminar.
+    {
+        Fader f;
+        f.start (+1, 1.0f, 1000.0, true);
+        CHECK (f.gain == 0.0f);
+        for (int n = 0; n < 500; ++n) CHECK (! f.tick());
+        CHECK (f.gain > 0.49f && f.gain < 0.51f);
+        for (int n = 0; n < 600; ++n) f.tick();
+        CHECK (f.gain == 1.0f && f.dir == 0);
+        f.start (-1, 0.5f, 1000.0, false);
+        int endedAt = -1;
+        for (int n = 0; n < 1000; ++n) if (f.tick()) { endedAt = n; break; }
+        CHECK (endedAt >= 498 && endedAt <= 501);
+        CHECK (f.gain == 0.0f);
+        // Todos los instrumentos tienen grupo de cancelar válido.
+        for (int i = 0; i < kNumInst; ++i) CHECK (kCancelGroupOf[i] >= 0 && kCancelGroupOf[i] < kCancelGroups);
+    }
+
     std::printf (failures ? "%d fallos\n" : "OK: todas las pruebas pasan\n", failures);
     return failures ? 1 : 0;
 }

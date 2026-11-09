@@ -39,6 +39,9 @@ public:
 
     // Disparo desde la interfaz (hilo de mensajes -> hilo de audio, sin bloqueos).
     void auditionFromUi (int inst, bool accent) { pendingPad[(size_t) inst].store (accent ? 2 : 1); }
+    // Fade in (+1) o fade out (-1) desde la interfaz. El fade in arranca la caja si está parada.
+    void requestFade (int dir);
+    std::atomic<int> fadeDirection { 0 };   // para los LED: +1, -1 o 0
 
     // Secuenciador. Modo 0 = ritmos de fábrica (copia editable en `pattern`),
     // modo 1 = patrones de usuario, modo 2 = canción (cadena de patrones de usuario).
@@ -85,6 +88,9 @@ private:
     int clockSpb = 4;
     int loadedRhythm = -1;
     float accentAmount = 1.0f;
+    r78::Fader fader;
+    std::atomic<int> fadeRequest { 0 };
+    std::array<std::atomic<float>*, r78::kCancelGroups> cancelParams {};
 
     void updateFxParams();
     float p (const char* id) const { return apvts.getRawParameterValue (id)->load(); }

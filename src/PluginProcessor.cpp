@@ -19,6 +19,7 @@ RitmoProcessor::RitmoProcessor()
         p.tone  = apvts.getRawParameterValue (pid (i, "tone"));
         p.pan   = apvts.getRawParameterValue (pid (i, "pan"));
         p.mute  = apvts.getRawParameterValue (pid (i, "mute"));
+        if (i < r78::kCancelGroups) cancelParams[(size_t) i] = apvts.getRawParameterValue ("cancel_" + juce::String (i));
         p.send  = apvts.getRawParameterValue (pid (i, "send"));
     }
     master = apvts.getRawParameterValue ("master");
@@ -66,6 +67,18 @@ bool RitmoProcessor::patternHasNotes (const r78::Pattern& p) const
 }
 
 // Cambiar de ritmo en el selector carga el patrón de fábrica (en el hilo de mensajes).
+void RitmoProcessor::requestFade (int dir)
+{
+    if (dir > 0)
+        if (auto* p = apvts.getParameter ("play"); p != nullptr && p->getValue() < 0.5f)
+        {
+            fadeRequest.store (dir);   // antes de arrancar, para empezar en silencio
+            p->setValueNotifyingHost (1.0f);
+            return;
+        }
+    fadeRequest.store (dir);
+}
+
 void RitmoProcessor::timerCallback()
 {
     const int sel = (int) apvts.getRawParameterValue ("rhythm")->load();
@@ -98,6 +111,15 @@ juce::AudioProcessorValueTreeState::ParameterLayout RitmoProcessor::createLayout
                                                         StringArray { "Fill del ritmo", "A/B", "Break", "Redoble bongo", "Redoble caja" }, 0));
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { "accent", 1 }, "Acento", 0.0f, 1.0f, 0.6f));
     layout.add (std::make_unique<AudioParameterBool> (ParameterID { "sync", 1 }, "Sincronizar con el DAW", true));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { "fade_time", 1 }, "Tiempo de fade",
+                                                       NormalisableRange<float> (1.0f, 30.0f, 0.1f, 0.5f), 8.0f));
+    {
+        static const char* cancelNames[r78::kCancelGroups] { "Cancelar bombo", "Cancelar caja y aro", "Cancelar charles, platillo y metal",
+                                                             "Cancelar bongos y conga", "Cancelar claves y cencerro",
+                                                             "Cancelar maracas, guiro y pandereta" };
+        for (int c = 0; c < r78::kCancelGroups; ++c)
+            layout.add (std::make_unique<AudioParameterBool> (ParameterID { "cancel_" + String (c), 1 }, cancelNames[c], false));
+    }
 
     // Efectos (cadena de envío)
     auto pct = [] (const char* id, const char* nm, float def) {
@@ -244,6 +266,15 @@ void RitmoProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
     const int curMode = mode();
     const r78::Pattern& refPat = curMode == 1 ? userPatterns[(size_t) userSlot()] : pattern;
     const int spb = juce::jlimit (1, 8, curMode == 2 ? 4 : refPat.stepsPerBeat.load());
+    // Fade: atender peticiones de la interfaz; al arrancar o parar se vuelve a volumen normal.
+    // Un fade in pedido con la caja parada espera a que arranque; un fade out con la caja parada se descarta.
+    if (running != wasRunning) fader.reset();
+    if (const int req = fadeRequest.load(); req != 0 && (running || req < 0))
+    {
+        fadeRequest.store (0);
+        if (running)
+            fader.start (req, apvts.getRawParameterValue ("fade_time")->load(), sampleRate, req > 0 && ! wasRunning);
+    }
     if (running)
     {
         if (! wasRunning && ! hostDriven) ppq = 0.0;
@@ -298,12 +329,15 @@ void RitmoProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
         fx.process (sl, sr, bpm);
         l += sl; r += sr;
         masterBus.process (l, r);
-        L[n] = l * gain;
-        R[n] = r * gain;
+        if (fader.tick()) stopRequested.store (true);   // fin del fade out: parar
+        const float g = gain * fader.gain;
+        L[n] = l * g;
+        R[n] = r * g;
     }
     internalPpq = ppq;
     expectedPpq = ppq;
     compGainReduction.store (masterBus.comp.gainReductionDb);
+    fadeDirection.store (fader.dir);
 }
 
 // Devuelve el patrón que suena en el paso global g y el paso relativo a ese patrón.
@@ -338,7 +372,7 @@ void RitmoProcessor::fireStep (long g)
     // Con acento suena a nivel completo; sin acento baja según el control "Acento".
     const float vel = ev[r78::kAccentRow] ? 1.0f : 1.0f - 0.45f * accentAmount;
     for (int i = 0; i < r78::kNumInst; ++i)
-        if (ev[i])
+        if (ev[i] && cancelParams[(size_t) r78::kCancelGroupOf[i]]->load() < 0.5f)   // Cancelar voz
             kit.trigger (i, vel, true);
     currentStep.store ((int) (local % len));
     currentVar.store (var);

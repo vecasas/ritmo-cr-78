@@ -64,6 +64,11 @@ private:
     // Portapapeles de patrón completo (las tres variaciones y la longitud).
     struct Clip { bool valid = false; int len = 16, spb = 4; bool cells[r78::kNumVars][r78::kRows][r78::kMaxSteps] {}; } clip;
     juce::TextButton copyBtn { "Copiar" }, pasteBtn { "Pegar" };
+    std::array<juce::TextButton, r78::kCancelGroups> cancelKeys;
+    std::vector<std::unique_ptr<ButtonAttachment>> cancelAtts;
+    juce::TextButton fadeInBtn { "Fade in" }, fadeOutBtn { "Fade out" };
+    juce::Slider fadeKnob;
+    int shownFade = 0;
     juce::ComboBox lengthBox, fillTypeBox;
     std::unique_ptr<ComboAttachment> fillTypeAtt;
     juce::Slider tempoKnob, swingKnob, accentKnob, masterKnob;

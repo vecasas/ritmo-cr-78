@@ -221,4 +221,39 @@ int songStep (SongCursor& c, long g, int count, EntryAt entryAt, LengthOf length
     }
     return kSongNone;
 }
+// ---------------------------------------------------------------- Cancelar voz
+// Seis teclas que quitan grupos de instrumentos del ritmo sin tocar el patrón.
+constexpr int kCancelGroups = 6;
+inline constexpr int kCancelGroupOf[kNumInst] {
+    0,          // bombo
+    1, 1,       // caja, aro
+    2, 2, 2,    // charles, platillo, metal
+    3, 3, 3,    // bongó agudo, bongó grave, conga
+    4,          // claves
+    5, 5, 5,    // maracas, güiro, pandereta
+    4           // cencerro
+};
+
+// ---------------------------------------------------------------- Fade
+// Rampa lineal de volumen para entrar o salir del ritmo.
+struct Fader
+{
+    float gain = 1.0f, step = 0.0f;
+    int dir = 0;   // +1 subiendo, -1 bajando, 0 quieto
+
+    void start (int d, float seconds, double sampleRate, bool fromSilence)
+    {
+        if (d > 0 && fromSilence) gain = 0.0f;
+        dir = d;
+        step = (float) (1.0 / ((seconds < 0.05f ? 0.05f : seconds) * sampleRate));
+    }
+    void reset() { gain = 1.0f; dir = 0; }
+    // Avanza una muestra. Devuelve true en la muestra en que termina un fade out.
+    bool tick()
+    {
+        if (dir > 0) { gain += step; if (gain >= 1.0f) { gain = 1.0f; dir = 0; } }
+        else if (dir < 0) { gain -= step; if (gain <= 0.0f) { gain = 0.0f; dir = 0; return true; } }
+        return false;
+    }
+};
 } // namespace r78
