@@ -1,17 +1,34 @@
 #pragma once
 #include "PluginProcessor.h"
+#include "ui/VintageLookAndFeel.h"
 #include "StepGrid.h"
 #include "FxPanel.h"
 
-// Interfaz provisional (fases 2 y 3): transporte y ritmo arriba, rejilla de pasos
-// en el centro y una tira de controles por instrumento abajo.
-// La interfaz definitiva llega en la fase 5.
-class RitmoEditor : public juce::AudioProcessorEditor
+// Grupo de teclas con LED enlazado a un parámetro de elección (ritmo, variación, fill).
+class ChoiceKeys : private juce::Timer
 {
 public:
-    explicit RitmoEditor (RitmoProcessor&);
+    ChoiceKeys (juce::Component& parent, juce::AudioProcessorValueTreeState& s, const juce::String& paramId,
+                std::function<juce::Colour (int)> colourFor);
+    std::vector<std::unique_ptr<juce::TextButton>> keys;
+    std::function<void()> onChange;
+
+private:
+    void timerCallback() override;
+    juce::RangedAudioParameter* param = nullptr;
+    int shown = -1;
+};
+
+// Panel principal con todo el contenido a tamaño base; el editor lo escala.
+class MainPanel : public juce::Component, private juce::Timer
+{
+public:
+    static constexpr int kW = 1240, kH = 900;
+    explicit MainPanel (RitmoProcessor&);
+    ~MainPanel() override;
     void paint (juce::Graphics&) override;
     void resized() override;
+    void showPage (int page);
 
 private:
     using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
@@ -21,39 +38,53 @@ private:
     struct Strip
     {
         juce::TextButton pad;
-        juce::ToggleButton mute { "M" };
+        juce::ToggleButton mute { "Mute" };
         juce::ToggleButton send { "FX" };
         std::array<juce::Slider, 5> knobs;
         std::vector<std::unique_ptr<SliderAttachment>> sAtt;
         std::unique_ptr<ButtonAttachment> mAtt, sendAtt;
     };
-    void showPage (int page);
 
-    void setupKnob (juce::Slider&);
-    void setupCombo (juce::ComboBox&, const juce::String& paramId);
+    void setupKnob (juce::Slider&, bool big = false);
     void refreshLengthBox();
+    void timerCallback() override;
 
     RitmoProcessor& proc;
     std::array<Strip, r78::kNumInst> strips;
 
-    // Transporte y secuenciador
-    juce::TextButton playBtn { "PLAY" };
-    juce::ComboBox rhythmBox, variationBox, fillBox, lengthBox;
+    juce::TextButton playBtn { "Start / Stop" };
+    std::unique_ptr<ChoiceKeys> rhythmKeys, variationKeys, fillKeys;
+    juce::ComboBox lengthBox;
     juce::Slider tempoKnob, swingKnob, accentKnob, masterKnob;
     juce::ToggleButton syncBtn { "Sync DAW" };
-    std::array<juce::TextButton, 3> varTabs { juce::TextButton { "Editar A" }, juce::TextButton { "Editar B" },
-                                              juce::TextButton { "Editar Fill" } };
+    std::array<juce::TextButton, 3> varTabs;
     juce::TextButton clearBtn { "Borrar" };
     StepGrid grid;
     FxPanel fxPanel;
-    std::array<juce::TextButton, 2> pageTabs { juce::TextButton { "Voces" }, juce::TextButton { "Efectos y máster" } };
+    std::array<juce::TextButton, 2> pageTabs;
     int page = 0;
+    float shownGr = 0.0f;
+    bool lastPlaying = false;
 
     std::unique_ptr<ButtonAttachment> playAtt, syncAtt;
-    std::vector<std::unique_ptr<ComboAttachment>> comboAtts;
     std::vector<std::unique_ptr<SliderAttachment>> knobAtts;
 
-    static constexpr const char* paramNames[5] { "level", "tune", "decay", "tone", "pan" };
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MainPanel)
+};
+
+class RitmoEditor : public juce::AudioProcessorEditor
+{
+public:
+    explicit RitmoEditor (RitmoProcessor&);
+    ~RitmoEditor() override;
+    void resized() override;
+    void paint (juce::Graphics& g) override { g.fillAll (juce::Colours::black); }
+    MainPanel& getPanel() { return panel; }
+
+private:
+    vintage::LookAndFeel laf;   // debe vivir más que los componentes
+    MainPanel panel;
+    juce::TooltipWindow tooltips { this, 600 };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (RitmoEditor)
 };

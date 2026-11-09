@@ -1,5 +1,7 @@
 # Ritmo CR-78
 
+![Ritmo CR-78](docs/interfaz_instrumentos.png)
+
 Caja de ritmos de estilo analógico de finales de los 70, con diseño, nombre, sonidos y patrones originales.
 Formatos: VST3, AU (macOS) y app standalone. Plataformas: macOS 10.13+ (Intel y Apple Silicon) y Windows 10+.
 
@@ -22,7 +24,7 @@ En Windows copia `Ritmo CR-78.vst3` a `C:\Program Files\Common Files\VST3\`.
 2. Voces sintetizadas (hecho)
 3. Secuenciador y ritmos (hecho)
 4. Mezclador y efectos (hecho)
-5. Interfaz gráfica
+5. Interfaz gráfica (hecho)
 6. MIDI, salidas múltiples y presets
 
 ## Instrumentos (fase 2)
@@ -67,3 +69,16 @@ Pruebas: `ctest --test-dir build -C Release`.
 - Cadena de envío: **Overdrive** (drive, tono, mezcla) → **Flanger** estéreo (velocidad, profundidad, realimentación, mezcla) → **Delay** sincronizado al tempo (1/16 a 1/2, tresillo y puntillo, realimentación, amortiguación, ping-pong) → **Reverb con gate** (tamaño, tiempo de gate, mezcla).
 - Máster: **compresor** con rodilla suave y medidor de reducción, y **EQ gráfico de 6 bandas** (60, 150, 400, 1k, 3k y 8k Hz, ±12 dB).
 - Todo es automatizable desde el DAW.
+
+## Interfaz (fase 5)
+
+Diseño propio de aire setentero, dibujado por código: laterales de madera, panel negro mate, teclas crema y de colores con LED, mandos con faldón metálico.
+
+- **Ritmos**: 35 teclas con LED, coloreadas por estilo.
+- **Transporte**: Start/Stop, tempo, swing, acento, variación A/B/A+B, fill cada N compases, longitud del patrón y Sync DAW.
+- **Patrón**: rejilla con pestañas A, B y Fill; cada fila con el color de su instrumento y la fila roja de acentos.
+- **Instrumentos**: pad de escucha, nivel, afinación, decay, tono, pan, mute y envío FX.
+- **Efectos y máster**: bloques con encendido por LED, compresor con medidor y EQ con faders.
+- La ventana se puede redimensionar del 50 % al 200 % manteniendo la proporción.
+
+Captura sin ventana para documentación: `cmake -B build -DR78_UI_SNAPSHOT=ON && cmake --build build --target ui_snapshot`.
