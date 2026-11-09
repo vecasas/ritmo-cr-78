@@ -1,6 +1,7 @@
 #pragma once
 #include "PluginProcessor.h"
 #include "StepGrid.h"
+#include "FxPanel.h"
 
 // Interfaz provisional (fases 2 y 3): transporte y ritmo arriba, rejilla de pasos
 // en el centro y una tira de controles por instrumento abajo.
@@ -21,10 +22,12 @@ private:
     {
         juce::TextButton pad;
         juce::ToggleButton mute { "M" };
+        juce::ToggleButton send { "FX" };
         std::array<juce::Slider, 5> knobs;
         std::vector<std::unique_ptr<SliderAttachment>> sAtt;
-        std::unique_ptr<ButtonAttachment> mAtt;
+        std::unique_ptr<ButtonAttachment> mAtt, sendAtt;
     };
+    void showPage (int page);
 
     void setupKnob (juce::Slider&);
     void setupCombo (juce::ComboBox&, const juce::String& paramId);
@@ -42,6 +45,9 @@ private:
                                               juce::TextButton { "Editar Fill" } };
     juce::TextButton clearBtn { "Borrar" };
     StepGrid grid;
+    FxPanel fxPanel;
+    std::array<juce::TextButton, 2> pageTabs { juce::TextButton { "Voces" }, juce::TextButton { "Efectos y máster" } };
+    int page = 0;
 
     std::unique_ptr<ButtonAttachment> playAtt, syncAtt;
     std::vector<std::unique_ptr<ComboAttachment>> comboAtts;

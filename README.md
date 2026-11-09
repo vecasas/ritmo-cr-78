@@ -21,7 +21,7 @@ En Windows copia `Ritmo CR-78.vst3` a `C:\Program Files\Common Files\VST3\`.
 1. Esqueleto + CI (hecho)
 2. Voces sintetizadas (hecho)
 3. Secuenciador y ritmos (hecho)
-4. Mezclador y efectos
+4. Mezclador y efectos (hecho)
 5. Interfaz gráfica
 6. MIDI, salidas múltiples y presets
 
@@ -60,3 +60,10 @@ Velocidad MIDI > 100 = acento. En la interfaz, Mayús+clic en un pad = acento.
 - El patrón editado se guarda con la sesión del DAW.
 
 Pruebas: `ctest --test-dir build -C Release`.
+
+## Mezclador y efectos (fase 4)
+
+- Cada instrumento tiene un botón **FX** que lo envía a la cadena de efectos; el resto suena seco.
+- Cadena de envío: **Overdrive** (drive, tono, mezcla) → **Flanger** estéreo (velocidad, profundidad, realimentación, mezcla) → **Delay** sincronizado al tempo (1/16 a 1/2, tresillo y puntillo, realimentación, amortiguación, ping-pong) → **Reverb con gate** (tamaño, tiempo de gate, mezcla).
+- Máster: **compresor** con rodilla suave y medidor de reducción, y **EQ gráfico de 6 bandas** (60, 150, 400, 1k, 3k y 8k Hz, ±12 dB).
+- Todo es automatizable desde el DAW.

@@ -35,7 +35,20 @@ void RitmoEditor::refreshLengthBox()
     lengthBox.setSelectedId (len * 10 + spb, juce::dontSendNotification);
 }
 
-RitmoEditor::RitmoEditor (RitmoProcessor& p) : AudioProcessorEditor (&p), proc (p), grid (p)
+void RitmoEditor::showPage (int newPage)
+{
+    page = newPage;
+    for (auto& st : strips)
+    {
+        st.pad.setVisible (page == 0); st.mute.setVisible (page == 0); st.send.setVisible (page == 0);
+        for (auto& k : st.knobs) k.setVisible (page == 0);
+    }
+    fxPanel.setVisible (page == 1);
+    pageTabs[(size_t) page].setToggleState (true, juce::dontSendNotification);
+    repaint();
+}
+
+RitmoEditor::RitmoEditor (RitmoProcessor& p) : AudioProcessorEditor (&p), proc (p), grid (p), fxPanel (p)
 {
     // ---- Transporte ----
     playBtn.setClickingTogglesState (true);
@@ -111,9 +124,27 @@ RitmoEditor::RitmoEditor (RitmoProcessor& p) : AudioProcessorEditor (&p), proc (
         s.mute.setColour (juce::ToggleButton::textColourId, kInk);
         addAndMakeVisible (s.mute);
         s.mAtt = std::make_unique<ButtonAttachment> (proc.apvts, RitmoProcessor::pid (i, "mute"), s.mute);
+        s.send.setColour (juce::ToggleButton::textColourId, kInk);
+        s.send.setTooltip (juce::String (juce::CharPointer_UTF8 ("Envía este instrumento a los efectos")));
+        addAndMakeVisible (s.send);
+        s.sendAtt = std::make_unique<ButtonAttachment> (proc.apvts, RitmoProcessor::pid (i, "send"), s.send);
     }
 
-    setSize (kMargin * 2 + 56 + kColW * r78::kNumInst, kStripsTop + kPadH + 5 * (kKnob + 4) + 34);
+    addChildComponent (fxPanel);
+    for (int t = 0; t < 2; ++t)
+    {
+        auto& b = pageTabs[(size_t) t];
+        b.setButtonText (juce::String (juce::CharPointer_UTF8 (t == 0 ? "Voces" : "Efectos y máster")));
+        b.setRadioGroupId (88);
+        b.setClickingTogglesState (true);
+        b.setColour (juce::TextButton::buttonOnColourId, kAccent.darker (0.2f));
+        b.onClick = [this, t] { showPage (t); };
+        addAndMakeVisible (b);
+    }
+    showPage (0);
+
+    setSize (juce::jmax (kMargin * 2 + 56 + kColW * r78::kNumInst, fxPanel.preferredWidth() + 2 * kMargin),
+             kStripsTop + 30 + kPadH + 5 * (kKnob + 4) + 34);
 }
 
 void RitmoEditor::paint (juce::Graphics& g)
@@ -140,8 +171,9 @@ void RitmoEditor::paint (juce::Graphics& g)
     g.setColour (kPanel);
     g.fillRect (0, kStripsTop - 8, getWidth(), 2);
     g.setColour (kInk.withAlpha (0.75f));
-    for (int k = 0; k < 5; ++k)
-        g.drawText (kRowLabels[k], kMargin, kStripsTop + kPadH + 4 + k * (kKnob + 4), 54, kKnob, juce::Justification::centredLeft);
+    if (page == 0)
+        for (int k = 0; k < 5; ++k)
+            g.drawText (kRowLabels[k], kMargin, kStripsTop + 30 + kPadH + 4 + k * (kKnob + 4), 54, kKnob, juce::Justification::centredLeft);
 }
 
 void RitmoEditor::resized()
@@ -163,14 +195,21 @@ void RitmoEditor::resized()
     clearBtn.setBounds (kMargin + StepGrid::labelW + 3 * 96 + 10, ty, 70, 22);
     grid.setBounds (kMargin, ty + kTabsH, getWidth() - 2 * kMargin, kGridH);
 
+    // Pestañas de página
+    pageTabs[0].setBounds (kMargin, kStripsTop, 90, 22);
+    pageTabs[1].setBounds (kMargin + 96, kStripsTop, 140, 22);
+    const int top = kStripsTop + 30;
+
     // Tiras
     for (int i = 0; i < r78::kNumInst; ++i)
     {
         auto& s = strips[(size_t) i];
         const int sx = kMargin + 56 + i * kColW;
-        s.pad.setBounds (sx + 2, kStripsTop, kColW - 4, kPadH - 4);
+        s.pad.setBounds (sx + 2, top, kColW - 4, kPadH - 4);
         for (int k = 0; k < 5; ++k)
-            s.knobs[(size_t) k].setBounds (sx + (kColW - kKnob) / 2, kStripsTop + kPadH + 4 + k * (kKnob + 4), kKnob, kKnob);
-        s.mute.setBounds (sx + (kColW - 40) / 2, kStripsTop + kPadH + 4 + 5 * (kKnob + 4), 40, 24);
+            s.knobs[(size_t) k].setBounds (sx + (kColW - kKnob) / 2, top + kPadH + 4 + k * (kKnob + 4), kKnob, kKnob);
+        s.mute.setBounds (sx + 2, top + kPadH + 4 + 5 * (kKnob + 4), 36, 24);
+        s.send.setBounds (sx + 36, top + kPadH + 4 + 5 * (kKnob + 4), 38, 24);
     }
+    fxPanel.setBounds (kMargin, top, getWidth() - 2 * kMargin, getHeight() - top - kMargin);
 }

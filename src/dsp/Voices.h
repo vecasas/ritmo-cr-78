@@ -20,6 +20,7 @@ struct VoiceParams
     float decay = 0.5f; // 0..1  (0.5 = valor de fábrica; mapea a x0.25 .. x4)
     float tone  = 0.5f; // 0..1  (brillo / mezcla, según la voz)
     float pan   = 0.0f; // -1..1
+    bool  send  = false; // envía la voz a la cadena de efectos
 };
 
 inline float decayScale (float d) { return std::pow (4.0f, (d - 0.5f) * 2.0f); }
@@ -415,14 +416,22 @@ public:
     // Suma una muestra en l/r con panorama de potencia constante.
     void process (float& l, float& r)
     {
-        l = r = 0;
+        float sl, sr;
+        process (l, r, sl, sr);
+        l += sl; r += sr;
+    }
+
+    // Versión con dos buses: seco (l/r) y envío a efectos (sendL/sendR).
+    void process (float& l, float& r, float& sendL, float& sendR)
+    {
+        l = r = sendL = sendR = 0;
         for (auto& v : voices)
         {
             if (! v->isActive()) continue;
             const float s = v->process();
             const float a = (v->p.pan + 1.0f) * 0.25f * kPi;
-            l += s * std::cos (a);
-            r += s * std::sin (a);
+            if (v->p.send) { sendL += s * std::cos (a); sendR += s * std::sin (a); }
+            else           { l += s * std::cos (a);     r += s * std::sin (a); }
         }
     }
 

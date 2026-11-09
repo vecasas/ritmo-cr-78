@@ -44,7 +44,9 @@ target_sources(RitmoCR78 PRIVATE
     src/dsp/Voices.h
     src/seq/Sequencer.h
     src/seq/FactoryRhythms.cpp
-    src/StepGrid.h)
+    src/StepGrid.h
+    src/FxPanel.h
+    src/fx/Effects.h)
 
 target_compile_definitions(RitmoCR78 PUBLIC
     JUCE_WEB_BROWSER=0
@@ -66,3 +68,6 @@ enable_testing()
 add_executable(test_sequencer tests/test_sequencer.cpp src/seq/FactoryRhythms.cpp)
 target_compile_features(test_sequencer PRIVATE cxx_std_20)
 add_test(NAME sequencer COMMAND test_sequencer)
+add_executable(test_fx tests/test_fx.cpp)
+target_compile_features(test_fx PRIVATE cxx_std_20)
+add_test(NAME fx COMMAND test_fx)
