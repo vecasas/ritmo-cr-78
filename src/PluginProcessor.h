@@ -2,6 +2,7 @@
 #include <JuceHeader.h>
 #include "dsp/Voices.h"
 #include "seq/Sequencer.h"
+#include "fx/Effects.h"
 
 // Ritmo CR-78: caja de ritmos analógica modelada (diseño propio).
 // Fase 2: 14 voces sintetizadas con control por voz, disparables por MIDI
@@ -25,7 +26,7 @@ public:
     bool acceptsMidi() const override { return true; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
-    double getTailLengthSeconds() const override { return 1.0; }
+    double getTailLengthSeconds() const override { return 3.0; }
 
     int getNumPrograms() override { return 1; }
     int getCurrentProgram() override { return 0; }
@@ -43,6 +44,7 @@ public:
     r78::Pattern pattern;
     std::atomic<int> currentStep { -1 };   // paso que suena ahora (-1 = parado)
     std::atomic<int> currentVar { 0 };     // variación que suena ahora
+    std::atomic<float> compGainReduction { 0.0f }; // dB, para el medidor
     void loadFactoryRhythm (int index);
     static juce::StringArray rhythmNames();
 
@@ -65,9 +67,15 @@ private:
     int loadedRhythm = -1;
     float accentAmount = 1.0f;
 
+    void updateFxParams();
+    float p (const char* id) const { return apvts.getRawParameterValue (id)->load(); }
+
     r78::DrumKit kit;
+    r78::FxChain fx;
+    r78::MasterBus masterBus;
     struct VoiceParamPtrs { std::atomic<float>* level; std::atomic<float>* tune; std::atomic<float>* decay;
-                            std::atomic<float>* tone; std::atomic<float>* pan; std::atomic<float>* mute; };
+                            std::atomic<float>* tone; std::atomic<float>* pan; std::atomic<float>* mute;
+                            std::atomic<float>* send; };
     std::array<VoiceParamPtrs, r78::kNumInst> vp {};
     std::atomic<float>* master = nullptr;
     std::array<std::atomic<int>, r78::kNumInst> pendingPad {};

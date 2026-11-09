@@ -19,6 +19,7 @@ RitmoProcessor::RitmoProcessor()
         p.tone  = apvts.getRawParameterValue (pid (i, "tone"));
         p.pan   = apvts.getRawParameterValue (pid (i, "pan"));
         p.mute  = apvts.getRawParameterValue (pid (i, "mute"));
+        p.send  = apvts.getRawParameterValue (pid (i, "send"));
     }
     master = apvts.getRawParameterValue ("master");
     loadFactoryRhythm (0);
@@ -67,6 +68,46 @@ juce::AudioProcessorValueTreeState::ParameterLayout RitmoProcessor::createLayout
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { "accent", 1 }, "Acento", 0.0f, 1.0f, 0.6f));
     layout.add (std::make_unique<AudioParameterBool> (ParameterID { "sync", 1 }, "Sincronizar con el DAW", true));
 
+    // Efectos (cadena de envío)
+    auto pct = [] (const char* id, const char* nm, float def) {
+        return std::make_unique<AudioParameterFloat> (ParameterID { id, 1 }, nm, 0.0f, 1.0f, def);
+    };
+    auto onOff = [] (const char* id, const char* nm, bool def) {
+        return std::make_unique<AudioParameterBool> (ParameterID { id, 1 }, nm, def);
+    };
+    layout.add (onOff ("od_on", "Overdrive On", false), pct ("od_drive", "Overdrive Drive", 0.4f),
+                pct ("od_tone", "Overdrive Tono", 0.5f), pct ("od_mix", "Overdrive Mezcla", 1.0f));
+    layout.add (onOff ("fl_on", "Flanger On", false), pct ("fl_rate", "Flanger Velocidad", 0.3f),
+                pct ("fl_depth", "Flanger Profundidad", 0.6f), pct ("fl_fb", "Flanger Realimentación", 0.4f),
+                pct ("fl_mix", "Flanger Mezcla", 0.5f));
+    layout.add (onOff ("dl_on", "Delay On", false),
+                std::make_unique<AudioParameterChoice> (ParameterID { "dl_time", 1 }, "Delay Tiempo",
+                    StringArray { "1/16", "1/8", "1/8 tresillo", "1/8 con puntillo", "1/4", "1/4 con puntillo", "1/2" }, 3),
+                pct ("dl_fb", "Delay Realimentación", 0.35f), pct ("dl_damp", "Delay Amortiguación", 0.4f),
+                pct ("dl_mix", "Delay Mezcla", 0.3f), onOff ("dl_pp", "Delay Ping-pong", true));
+    layout.add (onOff ("rv_on", "Reverb On", true), pct ("rv_size", "Reverb Tamaño", 0.7f),
+                std::make_unique<AudioParameterFloat> (ParameterID { "rv_gate", 1 }, "Reverb Gate (ms)",
+                                                       NormalisableRange<float> (40.0f, 800.0f, 1.0f, 0.5f), 250.0f),
+                onOff ("rv_gate_on", "Reverb Gate On", true), pct ("rv_mix", "Reverb Mezcla", 0.35f));
+
+    // Máster: compresor y EQ
+    layout.add (onOff ("comp_on", "Compresor On", true),
+                std::make_unique<AudioParameterFloat> (ParameterID { "comp_thr", 1 }, "Compresor Umbral",
+                                                       NormalisableRange<float> (-40.0f, 0.0f, 0.1f), -14.0f),
+                std::make_unique<AudioParameterFloat> (ParameterID { "comp_ratio", 1 }, "Compresor Ratio",
+                                                       NormalisableRange<float> (1.0f, 20.0f, 0.1f, 0.5f), 3.0f),
+                std::make_unique<AudioParameterFloat> (ParameterID { "comp_att", 1 }, "Compresor Ataque (ms)",
+                                                       NormalisableRange<float> (0.1f, 100.0f, 0.1f, 0.4f), 8.0f),
+                std::make_unique<AudioParameterFloat> (ParameterID { "comp_rel", 1 }, "Compresor Relajación (ms)",
+                                                       NormalisableRange<float> (10.0f, 1000.0f, 1.0f, 0.4f), 120.0f),
+                std::make_unique<AudioParameterFloat> (ParameterID { "comp_makeup", 1 }, "Compresor Ganancia",
+                                                       NormalisableRange<float> (0.0f, 24.0f, 0.1f), 3.0f));
+    layout.add (onOff ("eq_on", "EQ On", true));
+    static const char* eqNames[] { "EQ 60 Hz", "EQ 150 Hz", "EQ 400 Hz", "EQ 1 kHz", "EQ 3 kHz", "EQ 8 kHz" };
+    for (int b = 0; b < 6; ++b)
+        layout.add (std::make_unique<AudioParameterFloat> (ParameterID { "eq_" + String (b), 1 }, eqNames[b],
+                                                           NormalisableRange<float> (-12.0f, 12.0f, 0.1f), 0.0f));
+
     for (int i = 0; i < r78::kNumInst; ++i)
     {
         const String name (CharPointer_UTF8 (r78::kInstInfo[(size_t) i].name));
@@ -78,6 +119,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout RitmoProcessor::createLayout
         grp->addChild (std::make_unique<AudioParameterFloat> (ParameterID { pid (i, "tone"), 1 }, name + " Tono", 0.0f, 1.0f, 0.5f));
         grp->addChild (std::make_unique<AudioParameterFloat> (ParameterID { pid (i, "pan"), 1 }, name + " Pan", -1.0f, 1.0f, 0.0f));
         grp->addChild (std::make_unique<AudioParameterBool> (ParameterID { pid (i, "mute"), 1 }, name + " Mute", false));
+        grp->addChild (std::make_unique<AudioParameterBool> (ParameterID { pid (i, "send"), 1 }, name + " Envío FX", false));
         layout.add (std::move (grp));
     }
     return layout;
@@ -91,6 +133,28 @@ bool RitmoProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
 void RitmoProcessor::prepareToPlay (double sampleRate, int)
 {
     kit.setSampleRate ((float) sampleRate);
+    fx.prepare ((float) sampleRate);
+    masterBus.prepare ((float) sampleRate);
+}
+
+void RitmoProcessor::updateFxParams()
+{
+    fx.odOn = p ("od_on") > 0.5f; fx.od.drive = p ("od_drive"); fx.od.tone = p ("od_tone"); fx.od.mix = p ("od_mix");
+    fx.flOn = p ("fl_on") > 0.5f; fx.fl.rate = p ("fl_rate"); fx.fl.depth = p ("fl_depth");
+    fx.fl.feedback = p ("fl_fb"); fx.fl.mix = p ("fl_mix");
+    static constexpr float beats[] { 0.25f, 0.5f, 1.0f / 3.0f, 0.75f, 1.0f, 1.5f, 2.0f };
+    fx.dlOn = p ("dl_on") > 0.5f; fx.dl.timeBeats = beats[juce::jlimit (0, 6, (int) p ("dl_time"))];
+    fx.dl.feedback = p ("dl_fb"); fx.dl.damp = p ("dl_damp"); fx.dl.mix = p ("dl_mix"); fx.dl.pingPong = p ("dl_pp") > 0.5f;
+    fx.rvOn = p ("rv_on") > 0.5f; fx.rv.size = p ("rv_size"); fx.rv.gateMs = p ("rv_gate");
+    fx.rv.gateOn = p ("rv_gate_on") > 0.5f; fx.rv.mix = p ("rv_mix");
+
+    auto& c = masterBus.comp;
+    masterBus.compOn = p ("comp_on") > 0.5f;
+    c.thresholdDb = p ("comp_thr"); c.ratio = p ("comp_ratio"); c.attackMs = p ("comp_att");
+    c.releaseMs = p ("comp_rel"); c.makeupDb = p ("comp_makeup");
+    masterBus.eqOn = p ("eq_on") > 0.5f;
+    static const char* eqIds[] { "eq_0", "eq_1", "eq_2", "eq_3", "eq_4", "eq_5" };
+    for (int b = 0; b < 6; ++b) masterBus.eq.gainsDb[(size_t) b] = p (eqIds[b]);
 }
 
 void RitmoProcessor::updateVoiceParams()
@@ -104,6 +168,7 @@ void RitmoProcessor::updateVoiceParams()
         p.decay = s.decay->load();
         p.tone = s.tone->load();
         p.pan = s.pan->load();
+        p.send = s.send->load() > 0.5f;
     }
 }
 
@@ -112,6 +177,7 @@ void RitmoProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
     juce::ScopedNoDenormals noDenormals;
     buffer.clear();
     updateVoiceParams();
+    updateFxParams();
 
     for (int i = 0; i < r78::kNumInst; ++i)
         if (const int v = pendingPad[(size_t) i].exchange (0))
@@ -184,13 +250,17 @@ void RitmoProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
             ppq += ppqPerSample;
         }
 
-        float l, r;
-        kit.process (l, r);
+        float l, r, sl, sr;
+        kit.process (l, r, sl, sr);
+        fx.process (sl, sr, bpm);
+        l += sl; r += sr;
+        masterBus.process (l, r);
         L[n] = l * gain;
         R[n] = r * gain;
     }
     internalPpq = ppq;
     expectedPpq = ppq;
+    compGainReduction.store (masterBus.comp.gainReductionDb);
 }
 
 void RitmoProcessor::fireStep (long g)
