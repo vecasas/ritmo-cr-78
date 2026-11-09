@@ -93,7 +93,19 @@ struct PlayOptions
     float swing = 0.5f;      // 0.5 = recto, 0.75 = shuffle marcado
     int variation = 0;       // 0 = A, 1 = B, 2 = A/B alternos por compás
     int fillEvery = 0;       // 0 = nunca, si no cada N compases
+    int fillType = 0;        // ver FillType
     float accentLevel = 1.0f;
+};
+
+// Tipos de relleno para el compás de fill.
+enum FillType
+{
+    FillPattern = 0,   // la variación Fill del propio ritmo
+    FillSwapAB,        // toca la variación contraria (A <-> B)
+    FillBreak,         // solo suena el primer paso; el resto del compás en silencio
+    FillRollBongo,     // el ritmo sigue y se añade un redoble de bongó agudo en los 2 últimos tiempos
+    FillRollSnare,     // igual, con la caja
+    kNumFillTypes
 };
 
 // Motor de reproducción. Se avanza muestra a muestra a partir de una posición en
@@ -138,5 +150,75 @@ inline int variationForBar (long bar, const PlayOptions& o)
     if (o.fillEvery > 0 && (bar + 1) % o.fillEvery == 0) return VarFill;
     if (o.variation == 2) return (bar % 2 == 0) ? VarA : VarB;
     return o.variation == 1 ? VarB : VarA;
+}
+
+// Calcula qué filas (instrumentos + acento) suenan en el paso global g.
+// Devuelve la variación "visible" (para la interfaz).
+inline int stepEvents (const Pattern& p, long g, const PlayOptions& o, bool (&out)[kRows])
+{
+    const int len = std::max (1, std::min (kMaxSteps, p.length.load()));
+    const int spb = std::max (1, p.stepsPerBeat.load());
+    const int step = (int) (g % len);
+    const long bar = g / len;
+    for (auto& b : out) b = false;
+
+    const bool fillBar = o.fillEvery > 0 && (bar + 1) % o.fillEvery == 0;
+    PlayOptions base = o; base.fillEvery = 0;
+    int var = variationForBar (bar, base);
+
+    if (fillBar)
+    {
+        switch (o.fillType)
+        {
+            case FillPattern: var = VarFill; break;
+            case FillSwapAB:  var = (var == VarA) ? VarB : VarA; break;
+            case FillBreak:
+                if (step != 0) return var;
+                break;
+            default: break;
+        }
+    }
+    for (int r = 0; r < kRows; ++r) out[r] = p.get (var, r, step);
+
+    // Redoble: semicorcheas (o tresillos) en los dos últimos tiempos del compás.
+    if (fillBar && (o.fillType == FillRollBongo || o.fillType == FillRollSnare) && step >= len - 2 * spb)
+    {
+        out[o.fillType == FillRollBongo ? (int) Inst::HiBongo : (int) Inst::Snare] = true;
+        if (step == len - 2 * spb || step == len - spb) out[kAccentRow] = true;
+    }
+    return var;
+}
+// ---------------------------------------------------------------- Modo canción
+// Una canción es una lista de pasos; cada paso es un patrón de usuario (0..98),
+// kSongEnd (para la reproducción) o kSongLoop (vuelve al principio).
+constexpr int kSongEnd = -1, kSongLoop = -2, kSongNone = -3;
+
+struct SongCursor
+{
+    int pos = -1;        // paso de canción actual (-1 = sin empezar)
+    long barStart = 0;   // paso global en que empezó el patrón actual
+    void reset() { pos = -1; barStart = 0; }
+};
+
+// Avanza el cursor hasta el paso global g. Devuelve el patrón (entrada de la lista)
+// que suena y su paso local, kSongEnd si hay que parar o kSongNone si la lista está vacía.
+// entryAt(i) da la entrada i; lengthOf(patrón) da su longitud en pasos.
+template <typename EntryAt, typename LengthOf>
+int songStep (SongCursor& c, long g, int count, EntryAt entryAt, LengthOf lengthOf, long& local)
+{
+    if (count <= 0) return kSongNone;
+    if (c.pos < 0) { c.pos = 0; c.barStart = g; }
+    for (int guard = 0; guard < 2 * count + 2; ++guard)
+    {
+        if (c.pos >= count) c.pos = 0;                 // al final de la lista vuelve a empezar
+        const int e = entryAt (c.pos);
+        if (e == kSongLoop) { c.pos = 0; continue; }
+        if (e == kSongEnd) return kSongEnd;
+        const int len = lengthOf (e) < 1 ? 1 : lengthOf (e);
+        if (g - c.barStart >= len) { c.barStart += len; ++c.pos; continue; }
+        local = g - c.barStart;
+        return e;
+    }
+    return kSongNone;
 }
 } // namespace r78

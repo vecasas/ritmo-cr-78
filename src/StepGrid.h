@@ -14,9 +14,9 @@ public:
 
     void paint (juce::Graphics& g) override
     {
-        const int len = proc.pattern.length.load();
-        const int spb = proc.pattern.stepsPerBeat.load();
-        const int playing = proc.currentVar.load() == editVar ? proc.currentStep.load() : -1;
+        const int len = pat().length.load();
+        const int spb = pat().stepsPerBeat.load();
+        const int playing = (proc.currentVar.load() == editVar && proc.playingPattern.load() == &pat()) ? proc.currentStep.load() : -1;
         g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
 
         // LED de posición encima de cada columna: lo dibuja la fila 0 con un borde.
@@ -32,7 +32,7 @@ public:
             for (int s = 0; s < len; ++s)
             {
                 auto cell = cellBounds (r, s);
-                const bool on = proc.pattern.get (editVar, r, s);
+                const bool on = pat().get (editVar, r, s);
                 const bool beatStart = (s % spb) == 0;
                 const juce::Colour off = beatStart ? juce::Colour (0xff3a3731) : juce::Colour (0xff2b2925);
                 auto cf = cell.toFloat();
@@ -55,10 +55,16 @@ public:
 
     void mouseDown (const juce::MouseEvent& e) override
     {
+        if (e.mods.isPopupMenu())
+        {
+            const int r = e.y / cellH;
+            if (r >= 0 && r < r78::kRows) showRowMenu (r);
+            return;
+        }
         int r, s;
         if (! hit (e.getPosition(), r, s)) return;
-        paintValue = ! proc.pattern.get (editVar, r, s);
-        proc.pattern.set (editVar, r, s, paintValue);
+        paintValue = ! pat().get (editVar, r, s);
+        pat().set (editVar, r, s, paintValue);
         lastR = r; lastS = s;
         repaint();
     }
@@ -67,7 +73,7 @@ public:
     {
         int r, s;
         if (! hit (e.getPosition(), r, s) || (r == lastR && s == lastS)) return;
-        proc.pattern.set (editVar, r, s, paintValue);
+        pat().set (editVar, r, s, paintValue);
         lastR = r; lastS = s;
         repaint();
     }
@@ -75,15 +81,38 @@ public:
     static constexpr int labelW = 96, cellH = 20;
 
 private:
+    r78::Pattern& pat() const { return proc.editPattern(); }
+
+    // Menú contextual de fila: copiar, pegar o borrar la fila en la variación actual.
+    void showRowMenu (int r)
+    {
+        juce::PopupMenu m;
+        m.addItem (1, "Copiar fila");
+        m.addItem (2, "Pegar fila", rowClipValid);
+        m.addItem (3, "Borrar fila");
+        m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this), [this, r] (int res)
+        {
+            auto& p = pat();
+            for (int s = 0; s < r78::kMaxSteps; ++s)
+            {
+                if (res == 1) rowClip[(size_t) s] = p.get (editVar, r, s);
+                if (res == 2) p.set (editVar, r, s, rowClip[(size_t) s]);
+                if (res == 3) p.set (editVar, r, s, false);
+            }
+            if (res == 1) rowClipValid = true;
+            repaint();
+        });
+    }
+
     juce::Rectangle<int> cellBounds (int r, int s) const
     {
-        const int len = proc.pattern.length.load();
+        const int len = pat().length.load();
         const float w = (float) (getWidth() - labelW) / (float) juce::jmax (1, len);
         return juce::Rectangle<int> (labelW + (int) (s * w) + 1, r * cellH + 1, (int) w - 2, cellH - 2);
     }
     bool hit (juce::Point<int> p, int& r, int& s) const
     {
-        const int len = proc.pattern.length.load();
+        const int len = pat().length.load();
         if (p.x < labelW) return false;
         r = p.y / cellH;
         s = (int) ((p.x - labelW) / ((float) (getWidth() - labelW) / (float) juce::jmax (1, len)));
@@ -93,5 +122,7 @@ private:
 
     RitmoProcessor& proc;
     bool paintValue = true;
+    std::array<bool, r78::kMaxSteps> rowClip {};
+    bool rowClipValid = false;
     int lastR = -1, lastS = -1;
 };

@@ -1,5 +1,5 @@
 // Genera una captura PNG de la interfaz sin abrir ventanas (para documentación y revisión).
-// Uso: ui_snapshot <salida.png> [pagina 0|1] [escala]
+// Uso: ui_snapshot <salida.png> [pagina 0|1] [escala] [modo 0 fábrica|1 usuario|2 canción]
 #include <JuceHeader.h>
 #include "../src/PluginProcessor.h"
 #include "../src/PluginEditor.h"
@@ -19,6 +19,20 @@ int main (int argc, char** argv)
     if (auto* p = proc.apvts.getParameter ("fill")) p->setValueNotifyingHost (p->convertTo0to1 (2));
     proc.loadFactoryRhythm (7);
     proc.currentStep.store (4);
+
+    // Modo usuario o canción: unos patrones de ejemplo y una canción corta.
+    const int mode = argc > 4 ? juce::String (argv[4]).getIntValue() : 0;
+    if (mode > 0)
+    {
+        const auto& list = r78::factoryRhythms();
+        for (int i : { 0, 1, 2, 4, 7, 12 }) r78::loadRhythm (proc.userPatterns[(size_t) i], list[(size_t) i]);
+        const int songDemo[] { 7, 7, 7, 4, 7, 7, 12, 0, RitmoProcessor::kSongLoop };
+        for (int i = 0; i < 9; ++i) proc.song[(size_t) i].store (songDemo[i]);
+        proc.songLength.store (9);
+        proc.songEditPos.store (3);
+        if (auto* p = proc.apvts.getParameter ("user_slot")) p->setValueNotifyingHost (p->convertTo0to1 (8));
+        if (auto* p = proc.apvts.getParameter ("mode")) p->setValueNotifyingHost (p->convertTo0to1 ((float) mode));
+    }
 
     std::unique_ptr<juce::AudioProcessorEditor> ed (proc.createEditor());
     ed->setSize (MainPanel::kW, MainPanel::kH);

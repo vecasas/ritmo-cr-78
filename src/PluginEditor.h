@@ -3,6 +3,7 @@
 #include "ui/VintageLookAndFeel.h"
 #include "StepGrid.h"
 #include "FxPanel.h"
+#include "SongStrip.h"
 
 // Grupo de teclas con LED enlazado a un parámetro de elección (ritmo, variación, fill).
 class ChoiceKeys : private juce::Timer
@@ -47,14 +48,24 @@ private:
 
     void setupKnob (juce::Slider&, bool big = false);
     void refreshLengthBox();
+    void refreshMode();
+    void refreshSlotKeys();
     void timerCallback() override;
 
     RitmoProcessor& proc;
     std::array<Strip, r78::kNumInst> strips;
 
     juce::TextButton playBtn { "Start / Stop" };
-    std::unique_ptr<ChoiceKeys> rhythmKeys, variationKeys, fillKeys;
-    juce::ComboBox lengthBox;
+    std::unique_ptr<ChoiceKeys> rhythmKeys, variationKeys, fillKeys, modeKeys;
+    std::array<juce::TextButton, RitmoProcessor::kUserSlots> slotKeys;
+    SongStrip songStrip;
+    int shownMode = -1, shownSlot = -1, slotRefreshTick = 0;
+    const r78::Pattern* shownEdit = nullptr;
+    // Portapapeles de patrón completo (las tres variaciones y la longitud).
+    struct Clip { bool valid = false; int len = 16, spb = 4; bool cells[r78::kNumVars][r78::kRows][r78::kMaxSteps] {}; } clip;
+    juce::TextButton copyBtn { "Copiar" }, pasteBtn { "Pegar" };
+    juce::ComboBox lengthBox, fillTypeBox;
+    std::unique_ptr<ComboAttachment> fillTypeAtt;
     juce::Slider tempoKnob, swingKnob, accentKnob, masterKnob;
     juce::ToggleButton syncBtn { "Sync DAW" };
     std::array<juce::TextButton, 3> varTabs;

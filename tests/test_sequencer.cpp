@@ -67,6 +67,57 @@ int main()
         CHECK (variationForBar (3, o) == VarB);
     }
 
+    // Redoble de bongó cada 2 compases: semicorcheas en los pasos 8-15 del compás 2.
+    {
+        Pattern p; p.clear(); p.length.store (16); p.stepsPerBeat.store (4);
+        p.set (VarA, (int) Inst::Kick, 0, true);
+        PlayOptions o; o.fillEvery = 2; o.fillType = FillRollBongo;
+        bool ev[kRows];
+        int rollHits = 0;
+        for (long g = 0; g < 32; ++g)
+        {
+            stepEvents (p, g, o, ev);
+            if (ev[(int) Inst::HiBongo]) { ++rollHits; CHECK (g >= 24); }
+            if (g % 16 == 0) CHECK (ev[(int) Inst::Kick]);   // el ritmo sigue sonando
+        }
+        CHECK (rollHits == 8);
+        // Break: solo el primer paso del compás de fill.
+        o.fillType = FillBreak;
+        p.set (VarA, (int) Inst::Kick, 4, true);
+        stepEvents (p, 16 + 4, o, ev);
+        CHECK (! ev[(int) Inst::Kick]);
+        stepEvents (p, 16, o, ev);
+        CHECK (ev[(int) Inst::Kick]);
+    }
+
+    // Modo canción: patrón 0 (16 pasos), patrón 1 (8 pasos), bucle.
+    {
+        int entries[3] { 0, 1, kSongLoop };
+        auto lenOf = [] (int idx) { return idx == 0 ? 16 : 8; };
+        auto at = [&entries] (int i) { return entries[i]; };
+        SongCursor c; long local = -1;
+        CHECK (songStep (c, 0, 3, at, lenOf, local) == 0 && local == 0);
+        CHECK (songStep (c, 15, 3, at, lenOf, local) == 0 && local == 15);
+        CHECK (songStep (c, 16, 3, at, lenOf, local) == 1 && local == 0);
+        CHECK (songStep (c, 23, 3, at, lenOf, local) == 1 && local == 7);
+        CHECK (songStep (c, 24, 3, at, lenOf, local) == 0 && local == 0);   // bucle
+        CHECK (c.pos == 0);
+        // Con fin: tras el patrón 1 se para.
+        entries[2] = kSongEnd;
+        SongCursor c2;
+        for (long g = 0; g < 24; ++g) CHECK (songStep (c2, g, 3, at, lenOf, local) >= 0);
+        CHECK (songStep (c2, 24, 3, at, lenOf, local) == kSongEnd);
+        // Lista vacía y lista sin fin (vuelve a empezar).
+        SongCursor c3;
+        CHECK (songStep (c3, 0, 0, at, lenOf, local) == kSongNone);
+        CHECK (songStep (c3, 0, 1, at, lenOf, local) == 0);
+        CHECK (songStep (c3, 16, 1, at, lenOf, local) == 0 && local == 0);
+        // Solo un bucle: no se queda colgado.
+        int loopOnly[1] { kSongLoop };
+        SongCursor c4;
+        CHECK (songStep (c4, 0, 1, [&loopOnly] (int i) { return loopOnly[i]; }, lenOf, local) == kSongNone);
+    }
+
     std::printf (failures ? "%d fallos\n" : "OK: todas las pruebas pasan\n", failures);
     return failures ? 1 : 0;
 }
