@@ -256,4 +256,19 @@ struct Fader
         return false;
     }
 };
+// ---------------------------------------------------------------- Exportar a MIDI
+// Recorre `steps` pasos del patrón con las opciones de reproducción y llama a
+// emit(paso global, posición en negras con swing, eventos de la fila) en cada paso.
+template <typename Emit>
+void renderSteps (const Pattern& p, const PlayOptions& o, long steps, Emit emit)
+{
+    StepClock c;
+    c.locate (0.0, p.stepsPerBeat.load() < 1 ? 4 : p.stepsPerBeat.load());
+    for (long g = 0; g < steps; ++g)
+    {
+        bool ev[kRows];
+        stepEvents (p, g, o, ev);
+        emit (g, c.stepTime (g, o.swing), ev);
+    }
+}
 } // namespace r78

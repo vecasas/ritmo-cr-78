@@ -12,6 +12,7 @@ class RitmoProcessor : public juce::AudioProcessor, private juce::Timer
 {
 public:
     RitmoProcessor();
+    static constexpr int kNumAux = 7;   // salidas estéreo extra (2..8)
     ~RitmoProcessor() override = default;
 
     void prepareToPlay (double sampleRate, int samplesPerBlock) override;
@@ -75,7 +76,12 @@ public:
     static juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
     static juce::String pid (int inst, const char* param);
 
+    // Exportar a MIDI: escribe un .mid temporal con lo que sonaría (compases del
+    // patrón actual, o una pasada de la canción en modo canción).
+    juce::File exportMidiFile (int bars);
+
 private:
+    static BusesProperties makeBuses();
     void updateVoiceParams();
     void timerCallback() override;
     void fireStep (long globalStep);
@@ -115,7 +121,7 @@ private:
     r78::MasterBus masterBus;
     struct VoiceParamPtrs { std::atomic<float>* level; std::atomic<float>* tune; std::atomic<float>* decay;
                             std::atomic<float>* tone; std::atomic<float>* pan; std::atomic<float>* mute;
-                            std::atomic<float>* send; };
+                            std::atomic<float>* send; std::atomic<float>* out; };
     std::array<VoiceParamPtrs, r78::kNumInst> vp {};
     std::atomic<float>* master = nullptr;
     std::array<std::atomic<int>, r78::kNumInst> pendingPad {};

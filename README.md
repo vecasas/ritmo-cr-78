@@ -111,3 +111,8 @@ Página **MIDI** (pestaña junto a Efectos y máster):
 - **Salida**: con *Enviar el ritmo* activo, cada golpe del secuenciador y de los pads sale como nota MIDI (acento = velocidad 127, normal = 90) por el canal elegido (10 por defecto). En la app standalone va al puerto MIDI elegido en Opciones.
 
 ![MIDI](docs/interfaz_midi.png)
+
+## Multisalida y exportar MIDI (fase 6)
+
+- **Salidas de audio**: además de la principal, el plugin ofrece 7 salidas estéreo extra (Salida 2 a 8). En la página *MIDI y salidas* eliges la salida de cada instrumento. Las extra van en seco (sin efectos ni compresor/EQ, sí con master y fade) para procesarlas en el DAW. Hay que activarlas en el DAW; si una salida está desactivada, el instrumento vuelve a la principal.
+- **Arrastrar MIDI**: elige cuántos compases (1–16) y arrastra la tecla a una pista del DAW o al escritorio. Exporta lo que sonaría: variación, fills, swing, Cancelar voz y el mapa de notas. En modo canción exporta una pasada de la canción.

@@ -2,6 +2,7 @@
 #include "../src/seq/Sequencer.h"
 #include "../src/seq/MidiMap.h"
 #include <cstdio>
+#include <vector>
 
 static int failures = 0;
 #define CHECK(c) do { if (! (c)) { std::printf ("FALLO %s:%d  %s\n", __FILE__, __LINE__, #c); ++failures; } } while (0)
@@ -158,6 +159,24 @@ int main()
         midiHit (20, VelTwoLevels, 100, false, lv, ac); CHECK (! ac && lv == 1.0f);
         midiHit (127, VelFixed, 100, false, lv, ac);    CHECK (! ac && lv == 1.0f);
         midiHit (1, VelFixed, 100, true, lv, ac);       CHECK (ac);
+    }
+
+    // Exportar: 2 compases de un patrón con bombo en 0 y 8 dan 4 bombos en negras 0, 2, 4 y 6.
+    {
+        Pattern p; p.length.store (16); p.stepsPerBeat.store (4);
+        p.set (VarA, (int) Inst::Kick, 0, true);
+        p.set (VarA, (int) Inst::Kick, 8, true);
+        PlayOptions o;
+        std::vector<double> times;
+        renderSteps (p, o, 32, [&] (long, double ppq, const bool (&ev)[kRows]) { if (ev[(int) Inst::Kick]) times.push_back (ppq); });
+        CHECK (times.size() == 4);
+        if (times.size() == 4) CHECK (times[0] == 0.0 && times[1] == 2.0 && times[2] == 4.0 && times[3] == 6.0);
+        // Con swing, los pasos impares se retrasan.
+        o.swing = 0.66f;
+        p.set (VarA, (int) Inst::HiHat, 1, true);
+        double hh = -1;
+        renderSteps (p, o, 2, [&] (long, double ppq, const bool (&ev)[kRows]) { if (ev[(int) Inst::HiHat]) hh = ppq; });
+        CHECK (hh > 0.25 + 0.07 && hh < 0.25 + 0.09);
     }
 
     std::printf (failures ? "%d fallos\n" : "OK: todas las pruebas pasan\n", failures);

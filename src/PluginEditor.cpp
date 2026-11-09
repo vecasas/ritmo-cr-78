@@ -318,7 +318,7 @@ MainPanel::MainPanel (RitmoProcessor& p) : proc (p), songStrip (p), grid (p), fx
 
     addChildComponent (fxPanel);
     addChildComponent (midiPanel);
-    const char* pages[3] { "Instrumentos", "Efectos y máster", "MIDI" };
+    const char* pages[3] { "Instrumentos", "Efectos y máster", "MIDI y salidas" };
     for (int t = 0; t < 3; ++t)
     {
         auto& b = pageTabs[(size_t) t];
@@ -493,7 +493,7 @@ void MainPanel::resized()
     // Páginas
     pageTabs[0].setBounds (kCheek + 14, kPageTabs - 4, 130, 30);
     pageTabs[1].setBounds (kCheek + 150, kPageTabs - 4, 160, 30);
-    pageTabs[2].setBounds (kCheek + 316, kPageTabs - 4, 90, 30);
+    pageTabs[2].setBounds (kCheek + 316, kPageTabs - 4, 140, 30);
 
     // Tiras: pad, NIVEL grande, Afinar/Decay, Tono/Pan, Mute/FX
     const int x0 = kCheek + 12 + ((kW - 2 * kCheek - 24) - kStripW * r78::kNumInst) / 2;
