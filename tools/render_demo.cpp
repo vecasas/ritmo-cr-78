@@ -2,6 +2,7 @@
 // Uso: render_demo <carpeta_salida>
 #include "../src/dsp/Voices.h"
 #include "../src/seq/Sequencer.h"
+#include "../src/fx/Effects.h"
 #include <cstdio>
 #include <string>
 #include <vector>
@@ -166,6 +167,75 @@ int main (int argc, char** argv)
             ppq += ppqPerSample;
         }
         writeWav (out + "/09_fade_y_cancelar.wav", l5, r5, sr);
+    }
+
+    // 6) Control propio de cada instrumento: tres golpes con el control al 0 %, 50 % y 100 %.
+    {
+        std::vector<float> l6, r6;
+        r78::DrumKit kit;
+        kit.setSampleRate ((float) sr);
+        for (int i = 0; i < r78::kNumInst; ++i)
+        {
+            for (float e : { 0.0f, 0.5f, 1.0f })
+            {
+                kit.voice (i).p = {};
+                kit.voice (i).p.extra = e;
+                kit.trigger (i, 1.0f, true);
+                const int len = (int) (sr * (i == (int) r78::Inst::Cymbal ? 0.8f : 0.4f));
+                for (int n = 0; n < len; ++n) { float l, r; kit.process (l, r); l6.push_back (l * 0.6f); r6.push_back (r * 0.6f); }
+            }
+            for (int n = 0; n < sr / 4; ++n) { float l, r; kit.process (l, r); l6.push_back (l * 0.6f); r6.push_back (r * 0.6f); }
+        }
+        writeWav (out + "/10_control_propio.wav", l6, r6, sr);
+    }
+
+    // 7) Modos de efecto: el mismo compás (bombo, caja y charles, todo al envío) pasando por
+    //    overdrive transistor/válvula/fuzz, flanger/chorus, delay libre y reverb sala/placa/inversa.
+    {
+        using I = r78::Inst;
+        std::vector<float> l7, r7;
+        struct Setup { int od, fl, rv; bool odOn, flOn, dlOn, rvOn; };
+        const Setup setups[] {
+            { 0, 0, 0, true, false, false, false }, { 1, 0, 0, true, false, false, false }, { 2, 0, 0, true, false, false, false },
+            { 0, 0, 0, false, true, false, false }, { 0, 1, 0, false, true, false, false },
+            { 0, 0, 0, false, false, true, false },
+            { 0, 0, 0, false, false, false, true }, { 0, 0, 1, false, false, false, true }, { 0, 0, 2, false, false, false, true },
+        };
+        const float bpm = 110.0f;
+        const int stepLen = (int) (sr * 60.0f / bpm / 4.0f);
+        for (auto& st : setups)
+        {
+            r78::DrumKit kit;
+            kit.setSampleRate ((float) sr);
+            for (int i = 0; i < r78::kNumInst; ++i) kit.voice (i).p.send = true;
+            r78::FxChain fx;
+            fx.prepare ((float) sr);
+            fx.od.mode = st.od; fx.od.drive = 0.6f; fx.fl.mode = st.fl; fx.fl.mix = 0.7f; fx.rv.mode = st.rv; fx.rv.mix = 0.6f;
+            fx.dl.freeMs = 290.0f; fx.dl.mix = 0.45f;
+            fx.odOn = st.odOn; fx.flOn = st.flOn; fx.dlOn = st.dlOn; fx.rvOn = st.rvOn;
+            for (int bar = 0; bar < 2; ++bar)
+                for (int s16 = 0; s16 < 16; ++s16)
+                {
+                    if (s16 % 8 == 0) kit.trigger ((int) I::Kick, 1.0f, true);
+                    if (s16 % 8 == 4) kit.trigger ((int) I::Snare, 1.0f, true);
+                    if (s16 % 2 == 0) kit.trigger ((int) I::HiHat, 0.8f, s16 % 4 == 0);
+                    for (int n = 0; n < stepLen; ++n)
+                    {
+                        float l, r, sl, sr2;
+                        kit.process (l, r, sl, sr2);
+                        fx.process (sl, sr2, bpm);
+                        l7.push_back ((l + sl) * 0.45f); r7.push_back ((r + sr2) * 0.45f);
+                    }
+                }
+            for (int n = 0; n < sr / 3; ++n)
+            {
+                float l, r, sl, sr2;
+                kit.process (l, r, sl, sr2);
+                fx.process (sl, sr2, bpm);
+                l7.push_back ((l + sl) * 0.45f); r7.push_back ((r + sr2) * 0.45f);
+            }
+        }
+        writeWav (out + "/11_modos_efecto.wav", l7, r7, sr);
     }
 
     return 0;

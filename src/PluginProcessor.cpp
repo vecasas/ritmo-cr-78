@@ -22,6 +22,7 @@ RitmoProcessor::RitmoProcessor()
         if (i < r78::kCancelGroups) cancelParams[(size_t) i] = apvts.getRawParameterValue ("cancel_" + juce::String (i));
         p.send  = apvts.getRawParameterValue (pid (i, "send"));
         p.out   = apvts.getRawParameterValue (pid (i, "out"));
+        p.extra = apvts.getRawParameterValue (pid (i, "extra"));
     }
     master = apvts.getRawParameterValue ("master");
     loadFactoryRhythm (0);
@@ -141,6 +142,14 @@ juce::AudioProcessorValueTreeState::ParameterLayout RitmoProcessor::createLayout
     auto onOff = [] (const char* id, const char* nm, bool def) {
         return std::make_unique<AudioParameterBool> (ParameterID { id, 1 }, nm, def);
     };
+    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "od_mode", 1 }, "Overdrive Modo",
+                                                        StringArray { "Transistor", String (CharPointer_UTF8 ("Válvula")), "Fuzz" }, 0),
+                std::make_unique<AudioParameterChoice> (ParameterID { "fl_mode", 1 }, "Flanger Modo", StringArray { "Flanger", "Chorus" }, 0),
+                std::make_unique<AudioParameterBool> (ParameterID { "dl_sync", 1 }, "Delay Sincronizado", true),
+                std::make_unique<AudioParameterFloat> (ParameterID { "dl_ms", 1 }, "Delay Tiempo libre (ms)",
+                                                       NormalisableRange<float> (20.0f, 1500.0f, 1.0f, 0.5f), 375.0f),
+                std::make_unique<AudioParameterChoice> (ParameterID { "rv_mode", 1 }, "Reverb Modo",
+                                                        StringArray { "Sala", "Placa", "Inversa" }, 0));
     layout.add (onOff ("od_on", "Overdrive On", false), pct ("od_drive", "Overdrive Drive", 0.4f),
                 pct ("od_tone", "Overdrive Tono", 0.5f), pct ("od_mix", "Overdrive Mezcla", 1.0f));
     layout.add (onOff ("fl_on", "Flanger On", false), pct ("fl_rate", "Flanger Velocidad", 0.3f),
@@ -184,6 +193,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout RitmoProcessor::createLayout
         grp->addChild (std::make_unique<AudioParameterFloat> (ParameterID { pid (i, "decay"), 1 }, name + " Decay", 0.0f, 1.0f, 0.5f));
         grp->addChild (std::make_unique<AudioParameterFloat> (ParameterID { pid (i, "tone"), 1 }, name + " Tono", 0.0f, 1.0f, 0.5f));
         grp->addChild (std::make_unique<AudioParameterFloat> (ParameterID { pid (i, "pan"), 1 }, name + " Pan", -1.0f, 1.0f, 0.0f));
+        grp->addChild (std::make_unique<AudioParameterFloat> (ParameterID { pid (i, "extra"), 1 },
+                                                              name + " " + String (CharPointer_UTF8 (r78::kExtraName[(size_t) i])), 0.0f, 1.0f, 0.5f));
         grp->addChild (std::make_unique<AudioParameterBool> (ParameterID { pid (i, "mute"), 1 }, name + " Mute", false));
         grp->addChild (std::make_unique<AudioParameterBool> (ParameterID { pid (i, "send"), 1 }, name + " Envío FX", false));
         grp->addChild (std::make_unique<AudioParameterChoice> (ParameterID { pid (i, "out"), 1 }, name + " Salida",
@@ -223,6 +234,8 @@ void RitmoProcessor::prepareToPlay (double sampleRate, int)
 
 void RitmoProcessor::updateFxParams()
 {
+    fx.od.mode = (int) p ("od_mode"); fx.fl.mode = (int) p ("fl_mode"); fx.rv.mode = (int) p ("rv_mode");
+    fx.dl.freeMs = p ("dl_sync") > 0.5f ? 0.0f : p ("dl_ms");
     fx.odOn = p ("od_on") > 0.5f; fx.od.drive = p ("od_drive"); fx.od.tone = p ("od_tone"); fx.od.mix = p ("od_mix");
     fx.flOn = p ("fl_on") > 0.5f; fx.fl.rate = p ("fl_rate"); fx.fl.depth = p ("fl_depth");
     fx.fl.feedback = p ("fl_fb"); fx.fl.mix = p ("fl_mix");
@@ -252,6 +265,7 @@ void RitmoProcessor::updateVoiceParams()
         p.decay = s.decay->load();
         p.tone = s.tone->load();
         p.pan = s.pan->load();
+        p.extra = s.extra->load();
         p.send = s.send->load() > 0.5f;
         kit.outBus[(size_t) i] = (int) s.out->load();
     }

@@ -43,7 +43,7 @@ private:
         juce::TextButton pad;
         juce::ToggleButton mute { "Mute" };
         juce::ToggleButton send { "FX" };
-        std::array<juce::Slider, 5> knobs;
+        std::array<juce::Slider, 6> knobs;   // nivel, afinar, decay, tono, pan y el control propio
         std::vector<std::unique_ptr<SliderAttachment>> sAtt;
         std::unique_ptr<ButtonAttachment> mAtt, sendAtt;
     };

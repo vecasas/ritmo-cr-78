@@ -8,12 +8,14 @@ class FxPanel : public juce::Component, private juce::Timer
 public:
     explicit FxPanel (RitmoProcessor& p) : proc (p)
     {
-        addBlock ("OVERDRIVE", "od_on", { { "od_drive", "Drive" }, { "od_tone", "Tono" }, { "od_mix", "Mezcla" } });
-        addBlock ("FLANGER", "fl_on", { { "fl_rate", "Velocidad" }, { "fl_depth", "Profund." }, { "fl_fb", "Realim." }, { "fl_mix", "Mezcla" } });
-        addBlock ("DELAY", "dl_on", { { "dl_fb", "Realim." }, { "dl_damp", "Amortig." }, { "dl_mix", "Mezcla" } },
-                  { { "dl_time", "Tiempo" } }, { { "dl_pp", "Ping-pong" } });
-        addBlock ("REVERB GATE", "rv_on", { { "rv_size", "Tamaño" }, { "rv_gate", "Gate ms" }, { "rv_mix", "Mezcla" } },
-                  {}, { { "rv_gate_on", "Gate" } });
+        addBlock ("OVERDRIVE", "od_on", { { "od_drive", "Drive" }, { "od_tone", "Tono" }, { "od_mix", "Mezcla" } },
+                  { { "od_mode", "Modo" } });
+        addBlock ("FLANGER / CHORUS", "fl_on", { { "fl_rate", "Velocidad" }, { "fl_depth", "Profund." }, { "fl_fb", "Realim." }, { "fl_mix", "Mezcla" } },
+                  { { "fl_mode", "Modo" } });
+        addBlock ("DELAY", "dl_on", { { "dl_fb", "Realim." }, { "dl_damp", "Amortig." }, { "dl_mix", "Mezcla" }, { "dl_ms", "Libre ms" } },
+                  { { "dl_time", "Tiempo" } }, { { "dl_pp", "Ping-pong" }, { "dl_sync", "Al tempo" } });
+        addBlock ("REVERB", "rv_on", { { "rv_size", "Tamaño" }, { "rv_gate", "Gate ms" }, { "rv_mix", "Mezcla" } },
+                  { { "rv_mode", "Modo" } }, { { "rv_gate_on", "Gate" } });
         addBlock ("COMPRESOR", "comp_on", { { "comp_thr", "Umbral" }, { "comp_ratio", "Ratio" }, { "comp_att", "Ataque" },
                                             { "comp_rel", "Relaj." }, { "comp_makeup", "Ganancia" } });
         addBlock ("EQ MÁSTER", "eq_on", { { "eq_0", "60" }, { "eq_1", "150" }, { "eq_2", "400" }, { "eq_3", "1k" },
@@ -60,7 +62,7 @@ public:
                 w += dynamic_cast<juce::ComboBox*> (c.comp.get()) ? 96 : (dynamic_cast<juce::ToggleButton*> (c.comp.get()) ? 76 : 58);
             w = juce::jmax (150, w);
             juce::ignoreUnused (n);
-            if (b.get() == compBlock) { x = 0; y = rowH + 6; }
+            if (b.get() == rvBlock) { x = 0; y = rowH + 6; }   // segunda fila: reverb, compresor y EQ
             b->area = { x, y, w, rowH };
             b->power.setBounds (b->area.getX() + 8, y + 4, w - 16, 32);
             int cx = b->area.getX() + 8;
@@ -137,11 +139,13 @@ private:
         {
             Ctl c; auto t = std::make_unique<juce::ToggleButton> (juce::String (juce::CharPointer_UTF8 (s.label)));
             t->setColour (juce::ToggleButton::textColourId, juce::Colour (0xffeadfca));
+            t->setColour (juce::ToggleButton::tickColourId, juce::Colour (0xffe0782a));
             c.b = std::make_unique<ButtonAttachment> (proc.apvts, s.id, *t);
             c.comp = std::move (t);
             addAndMakeVisible (*c.comp); b->controls.push_back (std::move (c));
         }
         if (juce::String (onId) == "comp_on") compBlock = b.get();
+        if (juce::String (onId) == "rv_on") rvBlock = b.get();
         blocks.push_back (std::move (b));
     }
 
@@ -150,4 +154,5 @@ private:
     RitmoProcessor& proc;
     std::vector<std::unique_ptr<Block>> blocks;
     Block* compBlock = nullptr;
+    Block* rvBlock = nullptr;
 };

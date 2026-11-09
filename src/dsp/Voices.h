@@ -16,6 +16,7 @@ namespace r78
 struct VoiceParams
 {
     float level = 0.8f; // 0..1
+    float extra = 0.5f; // control propio de cada instrumento; 0.5 = sonido original
     float tune  = 0.0f; // semitonos, -12..+12
     float decay = 0.5f; // 0..1  (0.5 = valor de fábrica; mapea a x0.25 .. x4)
     float tone  = 0.5f; // 0..1  (brillo / mezcla, según la voz)
@@ -84,6 +85,7 @@ protected:
         pK = expCoef (dropTau, sr);
         cK = expCoef (0.0015f, sr);
         f0 = base * semitonesToRatio (p.tune);
+        golpe = 2.0f * p.extra;   // "Golpe": caída de tono y clic de ataque
         lp.set (1500.0f + 9000.0f * p.tone, 0.7f, sr);
         lp.reset();
         // Ataque suave de ~1 ms como el de un filtro en T excitado por pulso.
@@ -92,14 +94,14 @@ protected:
     }
     float render() override
     {
-        const float f = f0 * (1.0f + drop * penv);
+        const float f = f0 * (1.0f + drop * golpe * penv);
         phase += f / sr;
         if (phase >= 1.0f) phase -= 1.0f;
         att = std::min (1.0f, att + attInc);
         float s = std::sin (kTwoPi * phase) * env * att;
         // Clic de ataque (ruido muy corto filtrado), controlado por tone.
         lp.process (noise.next() * clickEnv);
-        s += lp.lp * click * (0.3f + p.tone);
+        s += lp.lp * click * golpe * (0.3f + p.tone);
         env *= envK; penv *= pK; clickEnv *= cK;
         return softClip (s * 1.3f);
     }
@@ -107,7 +109,7 @@ protected:
 private:
     float base, tau, drop, dropTau, click;
     float phase = 0, env = 0, penv = 0, clickEnv = 0, envK = 0, pK = 0, cK = 0, f0 = 0;
-    float att = 0, attInc = 0;
+    float att = 0, attInc = 0, golpe = 1.0f;
     Svf lp;
     Noise noise { 0xBADA55u };
 };
@@ -143,7 +145,9 @@ protected:
         const float n = (hp.hp * 0.6f + bp.bp * 0.8f) * (0.33f * en + 0.67f * spike);
         e1 *= k1; e2 *= k2; spike *= ks;
         if (t > hold) en *= kn;
-        return softClip ((body * 0.22f + n * 1.1f) * 1.6f);
+        // "Bordón": reparte entre el cuerpo tonal y el ruido de la bordonera.
+        const float wn = 2.0f * p.extra, wb = 2.0f * (1.0f - p.extra);
+        return softClip ((body * 0.22f * wb + n * 1.1f * wn) * 1.6f);
     }
 
 private:
@@ -170,7 +174,8 @@ protected:
     {
         ph1 += f1 / sr; if (ph1 >= 1) ph1 -= 1;
         ph2 += f2 / sr; if (ph2 >= 1) ph2 -= 1;
-        const float s = std::sin (kTwoPi * ph1) * e1 * (0.5f + 0.5f * p.tone) + std::sin (kTwoPi * ph2) * e2;
+        const float s = std::sin (kTwoPi * ph1) * e1 * (0.5f + 0.5f * p.tone)
+                      + std::sin (kTwoPi * ph2) * e2 * 2.0f * p.extra;   // "Cuerpo": parte grave del golpe
         hp.process (softClip (s * 3.0f));
         e1 *= k1; e2 *= k2;
         return hp.hp * 0.8f;
@@ -213,7 +218,7 @@ protected:
         env = 1.0f;
         k = expCoef (tau * decayScale (p.decay), sr);
         const float bright = 0.6f + 0.8f * p.tone;
-        bp.set (bpF * r * bright, q, sr);
+        bp.set (bpF * r * bright, q * (0.4f + 1.2f * p.extra), sr);   // "Resonancia"
         hp.set (hpF * r * bright, 0.7f, sr);
     }
     float render() override
@@ -250,9 +255,11 @@ protected:
         bank.set (1390.0f * r, sr);
         env = 1.0f;
         k = expCoef (tau * decayScale (p.decay), sr);
-        attInc = 1.0f / std::max (1.0f, attack * sr);
+        // "Sacudida": ataque más lento y meseta más larga hacia arriba.
+        const float sac = 0.25f + 1.5f * p.extra;
+        attInc = 1.0f / std::max (1.0f, attack * sac * sr);
         att = 0;
-        hold = (long) (holdTime * decayScale (p.decay) * sr);
+        hold = (long) (holdTime * 2.0f * p.extra * decayScale (p.decay) * sr);
     }
     float render() override
     {
@@ -285,7 +292,7 @@ protected:
         bp.set (6000.0f * r * (0.7f + 0.6f * p.tone), 4.0f, sr);
         bp.reset();
         len = 0.27f * decayScale (p.decay);
-        rate = 25.0f * r;
+        rate = 25.0f * r * (0.5f + p.extra);   // "Raspado": dientes más lentos o más rápidos
         lfo = 0;
     }
     float render() override
@@ -313,7 +320,8 @@ protected:
     void onTrigger() override
     {
         const float r = semitonesToRatio (p.tune);
-        a.setFreq (775.0f * r, sr); b.setFreq (1160.0f * r, sr);
+        a.setFreq (775.0f * r, sr);
+        b.setFreq (1160.0f * r * (1.0f + (p.extra - 0.5f) * 0.3f), sr);   // "Desafinar"
         bp.set (820.0f * r * (0.7f + 0.6f * p.tone), 2.5f, sr);
         bp.reset();
         e1 = e2 = 1.0f;
@@ -365,6 +373,12 @@ inline constexpr std::array<InstInfo, kNumInst> kInstInfo { {
     { "ta", "Pandereta",   54 },
     { "cb", "Cencerro",    56 },
 } };
+
+// Nombre del control propio de cada instrumento (en el orden de Inst).
+inline constexpr std::array<const char*, kNumInst> kExtraName {
+    "Golpe", "Bordón", "Cuerpo", "Resonancia", "Resonancia", "Resonancia", "Golpe", "Golpe", "Golpe", "Golpe",
+    "Sacudida", "Raspado", "Sacudida", "Desafinar"
+};
 
 inline std::unique_ptr<Voice> makeVoice (Inst i)
 {
