@@ -424,16 +424,31 @@ public:
     // Versión con dos buses: seco (l/r) y envío a efectos (sendL/sendR).
     void process (float& l, float& r, float& sendL, float& sendR)
     {
+        process (l, r, sendL, sendR, nullptr, nullptr, 0);
+    }
+
+    // Con salidas extra: un instrumento con outBus = k (1..numAux) va en seco a
+    // auxL[k-1]/auxR[k-1], sin efectos. Si esa salida no existe, va a la principal.
+    void process (float& l, float& r, float& sendL, float& sendR, float* auxL, float* auxR, int numAux)
+    {
         l = r = sendL = sendR = 0;
-        for (auto& v : voices)
+        for (int k = 0; k < numAux; ++k) auxL[k] = auxR[k] = 0;
+        for (int i = 0; i < kNumInst; ++i)
         {
+            auto& v = voices[(size_t) i];
             if (! v->isActive()) continue;
             const float s = v->process();
             const float a = (v->p.pan + 1.0f) * 0.25f * kPi;
-            if (v->p.send) { sendL += s * std::cos (a); sendR += s * std::sin (a); }
-            else           { l += s * std::cos (a);     r += s * std::sin (a); }
+            const float sl = s * std::cos (a), sr = s * std::sin (a);
+            const int bus = outBus[(size_t) i];
+            if (bus > 0 && bus <= numAux) { auxL[bus - 1] += sl; auxR[bus - 1] += sr; }
+            else if (v->p.send)           { sendL += sl; sendR += sr; }
+            else                          { l += sl; r += sr; }
         }
     }
+
+    // Salida de cada instrumento: 0 = principal, 1..7 = salidas extra 2..8.
+    std::array<int, kNumInst> outBus {};
 
 private:
     std::array<std::unique_ptr<Voice>, kNumInst> voices;

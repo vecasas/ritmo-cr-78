@@ -38,6 +38,36 @@ int main (int argc, char** argv)
         if (auto* p = proc.apvts.getParameter ("mode")) p->setValueNotifyingHost (p->convertTo0to1 ((float) mode));
     }
 
+    // R78_SELFTEST=1: comprueba la multisalida y la exportación MIDI y sale.
+    if (std::getenv ("R78_SELFTEST") != nullptr)
+    {
+        auto layout = proc.getBusesLayout();
+        layout.outputBuses.getReference (2) = juce::AudioChannelSet::stereo();   // activa la salida 3
+        std::printf ("layout ok: %d\n", (int) proc.setBusesLayout (layout));
+        if (auto* p = proc.apvts.getParameter ("bd_out")) p->setValueNotifyingHost (p->convertTo0to1 (2));   // bombo -> salida 3
+        if (auto* p = proc.apvts.getParameter ("sd_out")) p->setValueNotifyingHost (p->convertTo0to1 (5));   // caja -> salida 6 (apagada)
+        proc.prepareToPlay (48000, 512);
+        juce::AudioBuffer<float> buf (proc.getTotalNumOutputChannels(), 4800);
+        juce::MidiBuffer mb;
+        proc.auditionFromUi (0, true);
+        proc.processBlock (buf, mb);
+        std::printf ("canales %d  principal %.3f  salida3 %.3f\n", buf.getNumChannels(),
+                     buf.getRMSLevel (0, 0, 4800), buf.getRMSLevel (2, 0, 4800));
+        proc.auditionFromUi (1, true);
+        buf.clear();
+        proc.processBlock (buf, mb);
+        std::printf ("caja: principal %.3f  salida3 %.3f\n", buf.getRMSLevel (0, 0, 4800), buf.getRMSLevel (2, 0, 4800));
+        // Salida MIDI y entrada con nota de acento
+        if (auto* p = proc.apvts.getParameter ("midi_out")) p->setValueNotifyingHost (1.0f);
+        proc.auditionFromUi (3, false);
+        buf.clear(); mb.clear();
+        proc.processBlock (buf, mb);
+        for (const auto m : mb) std::printf ("midi out: %s\n", m.getMessage().getDescription().toRawUTF8());
+        const auto f = proc.exportMidiFile (2);
+        std::printf ("export %s %lld bytes\n", f.getFullPathName().toRawUTF8(), (long long) f.getSize());
+        return 0;
+    }
+
     std::unique_ptr<juce::AudioProcessorEditor> ed (proc.createEditor());
     ed->setSize (MainPanel::kW, MainPanel::kH);
     if (auto* re = dynamic_cast<RitmoEditor*> (ed.get())) re->getPanel().showPage (page);

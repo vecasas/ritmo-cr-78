@@ -7,7 +7,7 @@ juce::String RitmoProcessor::pid (int inst, const char* param)
 }
 
 RitmoProcessor::RitmoProcessor()
-    : AudioProcessor (BusesProperties().withOutput ("Main", juce::AudioChannelSet::stereo(), true)),
+    : AudioProcessor (makeBuses()),
       apvts (*this, nullptr, "PARAMS", createLayout())
 {
     for (int i = 0; i < r78::kNumInst; ++i)
@@ -21,6 +21,7 @@ RitmoProcessor::RitmoProcessor()
         p.mute  = apvts.getRawParameterValue (pid (i, "mute"));
         if (i < r78::kCancelGroups) cancelParams[(size_t) i] = apvts.getRawParameterValue ("cancel_" + juce::String (i));
         p.send  = apvts.getRawParameterValue (pid (i, "send"));
+        p.out   = apvts.getRawParameterValue (pid (i, "out"));
     }
     master = apvts.getRawParameterValue ("master");
     loadFactoryRhythm (0);
@@ -185,14 +186,32 @@ juce::AudioProcessorValueTreeState::ParameterLayout RitmoProcessor::createLayout
         grp->addChild (std::make_unique<AudioParameterFloat> (ParameterID { pid (i, "pan"), 1 }, name + " Pan", -1.0f, 1.0f, 0.0f));
         grp->addChild (std::make_unique<AudioParameterBool> (ParameterID { pid (i, "mute"), 1 }, name + " Mute", false));
         grp->addChild (std::make_unique<AudioParameterBool> (ParameterID { pid (i, "send"), 1 }, name + " Envío FX", false));
+        grp->addChild (std::make_unique<AudioParameterChoice> (ParameterID { pid (i, "out"), 1 }, name + " Salida",
+                                                               StringArray { "Principal", "Salida 2", "Salida 3", "Salida 4",
+                                                                             "Salida 5", "Salida 6", "Salida 7", "Salida 8" }, 0));
         layout.add (std::move (grp));
     }
     return layout;
 }
 
+// Salida principal estéreo y 7 salidas estéreo extra (desactivadas por defecto).
+juce::AudioProcessor::BusesProperties RitmoProcessor::makeBuses()
+{
+    auto b = BusesProperties().withOutput ("Principal", juce::AudioChannelSet::stereo(), true);
+    for (int k = 2; k <= 1 + kNumAux; ++k)
+        b = b.withOutput ("Salida " + juce::String (k), juce::AudioChannelSet::stereo(), false);
+    return b;
+}
+
 bool RitmoProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
 {
-    return layouts.getMainOutputChannelSet() == juce::AudioChannelSet::stereo();
+    if (layouts.getMainOutputChannelSet() != juce::AudioChannelSet::stereo()) return false;
+    for (int k = 1; k < layouts.outputBuses.size(); ++k)
+    {
+        const auto& set = layouts.outputBuses.getReference (k);
+        if (! set.isDisabled() && set != juce::AudioChannelSet::stereo()) return false;
+    }
+    return true;
 }
 
 void RitmoProcessor::prepareToPlay (double sampleRate, int)
@@ -234,6 +253,7 @@ void RitmoProcessor::updateVoiceParams()
         p.tone = s.tone->load();
         p.pan = s.pan->load();
         p.send = s.send->load() > 0.5f;
+        kit.outBus[(size_t) i] = (int) s.out->load();
     }
 }
 
@@ -244,6 +264,8 @@ void RitmoProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
     updateVoiceParams();
     updateFxParams();
 
+    midiOutOn = p ("midi_out") > 0.5f;
+    midiOutCh = (int) p ("midi_out_ch");
     std::array<int, r78::kNumInst> padHits {};
     for (int i = 0; i < r78::kNumInst; ++i)
         padHits[(size_t) i] = pendingPad[(size_t) i].exchange (0);
@@ -315,16 +337,32 @@ void RitmoProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
     const double ppqPerSample = bpm / 60.0 / sampleRate;
 
     const float gain = master->load();
-    auto* L = buffer.getWritePointer (0);
-    auto* R = buffer.getWritePointer (1);
+    auto mainBus = getBusBuffer (buffer, false, 0);
+    auto* L = mainBus.getWritePointer (0);
+    auto* R = mainBus.getWritePointer (1);
+    // Salidas extra activas en el host. Un instrumento enviado a una salida
+    // desactivada vuelve a la principal (con efectos y máster).
+    std::array<std::array<float*, 2>, kNumAux> auxPtr {};
+    std::array<float, kNumAux> auxL {}, auxR {};
+    std::array<bool, kNumAux> auxOn {};
+    int numAux = 0;
+    for (int k = 0; k < kNumAux && k + 1 < getBusCount (false); ++k)
+    {
+        auto* bus = getBus (false, k + 1);
+        if (bus == nullptr || ! bus->isEnabled() || bus->getNumberOfChannels() < 2) continue;
+        auto bb = getBusBuffer (buffer, false, k + 1);
+        auxPtr[(size_t) k] = { bb.getWritePointer (0), bb.getWritePointer (1) };
+        auxOn[(size_t) k] = true;
+        numAux = k + 1;
+    }
+    for (auto& ob : kit.outBus)
+        if (ob > 0 && (ob > kNumAux || ! auxOn[(size_t) (ob - 1)])) ob = 0;
 
     const int inCh = (int) p ("midi_in_ch");
     const int velMode = (int) p ("midi_vel");
     const int accThr = (int) p ("midi_acc_thr");
     const int accNote = (int) p ("midi_acc_note");
     if (accNote < 0) accentHeld = false;
-    midiOutOn = p ("midi_out") > 0.5f;
-    midiOutCh = (int) p ("midi_out_ch");
 
     auto midiIt = midi.cbegin();
     for (int n = 0; n < buffer.getNumSamples(); ++n)
@@ -367,7 +405,7 @@ void RitmoProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
         }
 
         float l, r, sl, sr;
-        kit.process (l, r, sl, sr);
+        kit.process (l, r, sl, sr, auxL.data(), auxR.data(), numAux);
         fx.process (sl, sr, bpm);
         l += sl; r += sr;
         masterBus.process (l, r);
@@ -375,6 +413,12 @@ void RitmoProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
         const float g = gain * fader.gain;
         L[n] = l * g;
         R[n] = r * g;
+        for (int k = 0; k < numAux; ++k)   // salidas extra: en seco, con master y fade
+        {
+            if (! auxOn[(size_t) k]) continue;
+            auxPtr[(size_t) k][0][n] = auxL[(size_t) k] * g;
+            auxPtr[(size_t) k][1][n] = auxR[(size_t) k] * g;
+        }
     }
     internalPpq = ppq;
     expectedPpq = ppq;
@@ -438,6 +482,73 @@ void RitmoProcessor::sendMidiHit (int inst, bool accent, int samplePos)
     midiOut.addEvent (juce::MidiMessage::noteOn (midiOutCh, note, (juce::uint8) (accent ? 127 : 90)), samplePos);
     noteOutNum[(size_t) inst] = note;
     noteOffIn[(size_t) inst] = juce::jmax (1, (int) (getSampleRate() * 0.03));
+}
+
+juce::File RitmoProcessor::exportMidiFile (int bars)
+{
+    constexpr int tpq = 960;
+    juce::MidiMessageSequence seq;
+    const int ch = (int) p ("midi_out_ch");
+    const double bpm = p ("tempo");
+    seq.addEvent (juce::MidiMessage::tempoMetaEvent ((int) (60000000.0 / bpm)), 0.0);
+
+    r78::PlayOptions o;
+    o.swing = p ("swing") / 100.0f;
+    o.variation = (int) p ("variation");
+    static constexpr int fills[] { 0, 2, 4, 8, 16 };
+    o.fillEvery = fills[juce::jlimit (0, 4, (int) p ("fill"))];
+    o.fillType = (int) p ("fill_type");
+
+    auto addHits = [&] (const bool (&ev)[r78::kRows], double ppq) {
+        for (int i = 0; i < r78::kNumInst; ++i)
+        {
+            if (! ev[i] || cancelParams[(size_t) r78::kCancelGroupOf[i]]->load() > 0.5f) continue;
+            const int note = midiMap.note[(size_t) i].load();
+            if (note < 0) continue;
+            const double t = ppq * tpq;
+            seq.addEvent (juce::MidiMessage::noteOn (ch, note, (juce::uint8) (ev[r78::kAccentRow] ? 127 : 90)), t);
+            seq.addEvent (juce::MidiMessage::noteOff (ch, note), t + tpq / 8.0);
+        }
+    };
+
+    juce::String name;
+    if (mode() == 2)
+    {
+        // Una pasada de la canción, hasta Fin, Bucle o el final de la lista.
+        o.fillEvery = 0;
+        double startPpq = 0.0;
+        name = "Cancion";
+        for (int i = 0; i < songLength.load(); ++i)
+        {
+            const int e = song[(size_t) i].load();
+            if (e < 0) break;
+            const auto& pat = userPatterns[(size_t) juce::jlimit (0, kUserSlots - 1, e)];
+            const int len = juce::jlimit (1, r78::kMaxSteps, pat.length.load());
+            const int spb = juce::jlimit (1, 8, pat.stepsPerBeat.load());
+            r78::renderSteps (pat, o, len, [&] (long, double ppq, const bool (&ev)[r78::kRows]) { addHits (ev, startPpq + ppq); });
+            startPpq += (double) len / spb;
+        }
+    }
+    else
+    {
+        const auto& pat = editPattern();
+        const int len = juce::jlimit (1, r78::kMaxSteps, pat.length.load());
+        r78::renderSteps (pat, o, (long) len * juce::jmax (1, bars), [&] (long, double ppq, const bool (&ev)[r78::kRows]) { addHits (ev, ppq); });
+        name = mode() == 1 ? "Usuario " + juce::String (userSlot() + 1)
+                           : juce::String (juce::CharPointer_UTF8 (r78::factoryRhythms()[(size_t) juce::jlimit (0, (int) r78::factoryRhythms().size() - 1, loadedRhythm)].name));
+    }
+    seq.updateMatchedPairs();
+
+    juce::MidiFile mf;
+    mf.setTicksPerQuarterNote (tpq);
+    mf.addTrack (seq);
+    auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("RitmoCR78");
+    dir.createDirectory();
+    auto file = dir.getChildFile (juce::File::createLegalFileName ("Ritmo CR-78 - " + name + ".mid"));
+    file.deleteFile();
+    juce::FileOutputStream os (file);
+    if (os.openedOk()) mf.writeTo (os);
+    return file;
 }
 
 // Graba un golpe de pad en el paso más cercano del patrón que está sonando.

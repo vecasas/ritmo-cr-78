@@ -2,6 +2,27 @@
 #include "PluginProcessor.h"
 #include "ui/VintageLookAndFeel.h"
 
+// Tecla que, al arrastrarla, suelta un archivo .mid en el DAW o en el escritorio.
+class MidiDragButton : public juce::TextButton
+{
+public:
+    std::function<juce::File()> makeFile;
+    void mouseDrag (const juce::MouseEvent& e) override
+    {
+        if (dragging || e.getDistanceFromDragStart() < 6 || ! makeFile) return;
+        dragging = true;
+        const auto f = makeFile();
+        if (f.existsAsFile())
+            juce::DragAndDropContainer::performExternalDragDropOfFiles ({ f.getFullPathName() }, false, this,
+                                                                         [this] { dragging = false; });
+        else
+            dragging = false;
+    }
+    void mouseUp (const juce::MouseEvent& e) override { juce::TextButton::mouseUp (e); }
+private:
+    bool dragging = false;
+};
+
 // Página MIDI: canal de entrada, velocidad y acento, salida del ritmo por MIDI
 // y el mapa de notas de los 14 instrumentos con "Aprender".
 class MidiPanel : public juce::Component, private juce::Timer
@@ -37,11 +58,28 @@ public:
         outAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (proc.apvts, "midi_out", outBtn);
         addCombo (outChBox, "midi_out_ch", 1, 16, [] (int v) { return juce::String (v); });
 
+        // ---- Exportar arrastrando ----
+        for (int b : { 1, 2, 4, 8, 16 }) barsBox.addItem (juce::String (b) + (b == 1 ? u (" compás") : u (" compases")), b);
+        barsBox.setSelectedId (4, juce::dontSendNotification);
+        barsBox.setTooltip (u ("Cuántos compases exporta (con variación y fills). En modo canción exporta la canción entera."));
+        addAndMakeVisible (barsBox);
+        dragBtn.setButtonText (u ("Arrastrar MIDI"));
+        dragBtn.getProperties().set ("keyColour", (juce::int64) vintage::mustard.getARGB());
+        dragBtn.setTooltip (u ("Arrastra esta tecla a una pista del DAW o al escritorio para soltar el ritmo como archivo MIDI"));
+        dragBtn.makeFile = [this] { return proc.exportMidiFile (juce::jmax (1, barsBox.getSelectedId())); };
+        addAndMakeVisible (dragBtn);
+
         // ---- Mapa de notas ----
         for (int i = 0; i < r78::kNumInst; ++i)
         {
             auto& b = learnBtns[(size_t) i];
             b.setButtonText ("Aprender");
+            auto& oc = outBoxes[(size_t) i];
+            if (auto* pc = dynamic_cast<juce::AudioParameterChoice*> (proc.apvts.getParameter (RitmoProcessor::pid (i, "out"))))
+                oc.addItemList (pc->choices, 1);
+            oc.setTooltip (u ("Salida de audio del instrumento. Las salidas 2 a 8 van en seco (sin efectos) y hay que activarlas en el DAW."));
+            addAndMakeVisible (oc);
+            outAtts.push_back (std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (proc.apvts, RitmoProcessor::pid (i, "out"), oc));
             b.getProperties().set ("led", true);
             b.getProperties().set ("keyColour", (juce::int64) juce::Colour (0xff8c8a82).getARGB());
             b.setTooltip (u ("Pulsa y toca una nota en tu teclado o pad MIDI para asignarla a este instrumento"));
@@ -71,7 +109,7 @@ public:
         };
         box (inArea, "ENTRADA MIDI");
         box (outArea, "SALIDA MIDI");
-        box (mapArea, "MAPA DE NOTAS");
+        box (mapArea, "MAPA DE NOTAS Y SALIDAS DE AUDIO");
 
         g.setColour (ink.withAlpha (0.6f));
         g.setFont (juce::FontOptions (10.0f, juce::Font::bold));
@@ -79,6 +117,7 @@ public:
             g.drawText (juce::String (juce::CharPointer_UTF8 (t)), c.getX(), c.getY() - 13, c.getWidth() + 40, 12, juce::Justification::centredLeft);
         };
         above (inChBox, "CANAL"); above (velBox, "VELOCIDAD"); above (accNoteBox, "NOTA DE ACENTO"); above (outChBox, "CANAL");
+        above (barsBox, "EXPORTAR");
         g.drawText ("UMBRAL", thrKnob.getX() - 10, thrKnob.getBottom(), thrKnob.getWidth() + 20, 12, juce::Justification::centred);
 
         // Última nota recibida
@@ -122,13 +161,16 @@ public:
         accNoteBox.setBounds (inArea.getX() + 12, inArea.getY() + 106, 212, 22);
 
         outBtn.setBounds (outArea.getX() + 12, outArea.getY() + 34, 160, 22);
-        outChBox.setBounds (outArea.getX() + 12, outArea.getY() + 90, 80, 22);
+        outChBox.setBounds (outArea.getX() + 12, outArea.getY() + 80, 80, 22);
+        barsBox.setBounds (outArea.getX() + 12, outArea.getY() + 128, 156, 22);
+        dragBtn.setBounds (outArea.getX() + 12, outArea.getY() + 158, 156, 34);
 
         resetBtn.setBounds (mapArea.getRight() - 150, mapArea.getY() + 4, 140, 20);
         for (int i = 0; i < r78::kNumInst; ++i)
         {
             auto c = cell (i);
-            learnBtns[(size_t) i].setBounds (c.getX() + 6, c.getY() + 38, c.getWidth() - 12, 34);
+            learnBtns[(size_t) i].setBounds (c.getX() + 6, c.getY() + 34, c.getWidth() - 12, 30);
+            outBoxes[(size_t) i].setBounds (c.getX() + 6, c.getY() + 66, c.getWidth() - 12, 20);
         }
     }
 
@@ -184,6 +226,10 @@ private:
     juce::ToggleButton outBtn { "Enviar el ritmo" };
     std::array<juce::TextButton, r78::kNumInst> learnBtns;
     juce::TextButton resetBtn { "Mapa por defecto" };
+    std::array<juce::ComboBox, r78::kNumInst> outBoxes;
+    std::vector<std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment>> outAtts;
+    juce::ComboBox barsBox;
+    MidiDragButton dragBtn;
     std::vector<ComboLink> combos;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> velAtt;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> thrAtt;
