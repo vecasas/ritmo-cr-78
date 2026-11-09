@@ -39,7 +39,9 @@ juce_generate_juce_header(RitmoCR78)
 
 target_sources(RitmoCR78 PRIVATE
     src/PluginProcessor.cpp
-    src/PluginEditor.cpp)
+    src/PluginEditor.cpp
+    src/dsp/DspUtils.h
+    src/dsp/Voices.h)
 
 target_compile_definitions(RitmoCR78 PUBLIC
     JUCE_WEB_BROWSER=0
@@ -50,3 +52,7 @@ target_compile_definitions(RitmoCR78 PUBLIC
 target_link_libraries(RitmoCR78
     PRIVATE juce::juce_audio_utils juce::juce_dsp
     PUBLIC juce::juce_recommended_config_flags juce::juce_recommended_lto_flags juce::juce_recommended_warning_flags)
+
+# Herramienta de línea de comandos que renderiza las voces a WAV (sin JUCE).
+add_executable(render_demo tools/render_demo.cpp)
+target_compile_features(render_demo PRIVATE cxx_std_20)
