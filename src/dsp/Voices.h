@@ -118,31 +118,37 @@ protected:
     {
         const float ds = decayScale (p.decay);
         const float r = semitonesToRatio (p.tune);
-        f1 = 185.0f * r; f2 = 330.0f * r;
+        f1 = 305.0f * r; f2 = 470.0f * r;
         ph1 = ph2 = 0;
-        e1 = e2 = 1.0f; en = 1.0f;
-        k1 = expCoef (0.045f, sr); k2 = expCoef (0.025f, sr);
-        kn = expCoef (0.075f * ds, sr);
-        hp.set (1200.0f + 1500.0f * p.tone, 0.6f, sr);
-        bp.set (5200.0f, 0.9f, sr);
-        hp.reset(); bp.reset();
+        e1 = e2 = 1.0f; en = 1.0f; spike = 1.0f;
+        k1 = expCoef (0.012f, sr); k2 = expCoef (0.008f, sr);
+        kn = expCoef (0.012f, sr);
+        ks = expCoef (0.004f, sr);
+        hold = (long) (0.045f * ds * sr);
+        hp.set (1500.0f + 2000.0f * p.tone, 0.6f, sr);
+        bp.set (5200.0f * r, 1.1f, sr);
+        lp.set (7500.0f + 3000.0f * p.tone, 0.7f, sr);
+        hp.reset(); bp.reset(); lp.reset();
     }
     float render() override
     {
         ph1 += f1 / sr; if (ph1 >= 1) ph1 -= 1;
         ph2 += f2 / sr; if (ph2 >= 1) ph2 -= 1;
         const float body = std::sin (kTwoPi * ph1) * e1 * 0.8f + std::sin (kTwoPi * ph2) * e2 * 0.5f;
-        hp.process (noise.next());
+        lp.process (noise.next());
+        hp.process (lp.lp);
         bp.process (hp.hp);
-        const float n = (hp.hp * 0.6f + bp.bp * 0.8f) * en;
-        const float mix = 0.35f + 0.5f * p.tone; // tone = más bordón
-        e1 *= k1; e2 *= k2; en *= kn;
-        return softClip ((body * (1.0f - mix) + n * mix) * 1.6f);
+        // Ruido con golpe inicial y meseta sostenida que se corta (como el original).
+        const float n = (hp.hp * 0.6f + bp.bp * 0.8f) * (0.33f * en + 0.67f * spike);
+        e1 *= k1; e2 *= k2; spike *= ks;
+        if (t > hold) en *= kn;
+        return softClip ((body * 0.22f + n * 1.1f) * 1.6f);
     }
 
 private:
-    float f1 = 0, f2 = 0, ph1 = 0, ph2 = 0, e1 = 0, e2 = 0, en = 0, k1 = 0, k2 = 0, kn = 0;
-    Svf hp, bp;
+    float f1 = 0, f2 = 0, ph1 = 0, ph2 = 0, e1 = 0, e2 = 0, en = 0, k1 = 0, k2 = 0, kn = 0, spike = 0, ks = 0;
+    long hold = 0;
+    Svf hp, bp, lp;
     Noise noise { 0x51A2E1u };
 };
 
@@ -152,18 +158,18 @@ protected:
     void onTrigger() override
     {
         const float r = semitonesToRatio (p.tune);
-        f1 = 1650.0f * r; f2 = 455.0f * r;
+        f1 = 1400.0f * r; f2 = 160.0f * r;
         ph1 = ph2 = 0; e1 = e2 = 1.0f;
         const float ds = decayScale (p.decay);
-        k1 = expCoef (0.010f * ds, sr); k2 = expCoef (0.006f * ds, sr);
-        hp.set (300.0f + 900.0f * p.tone, 0.7f, sr);
+        k1 = expCoef (0.0016f * ds, sr); k2 = expCoef (0.0025f * ds, sr);
+        hp.set (40.0f + 200.0f * p.tone, 0.7f, sr);
         hp.reset();
     }
     float render() override
     {
         ph1 += f1 / sr; if (ph1 >= 1) ph1 -= 1;
         ph2 += f2 / sr; if (ph2 >= 1) ph2 -= 1;
-        const float s = std::sin (kTwoPi * ph1) * e1 + std::sin (kTwoPi * ph2) * e2 * 0.8f;
+        const float s = std::sin (kTwoPi * ph1) * e1 * (0.5f + 0.5f * p.tone) + std::sin (kTwoPi * ph2) * e2;
         hp.process (softClip (s * 3.0f));
         e1 *= k1; e2 *= k2;
         return hp.hp * 0.8f;
@@ -195,8 +201,8 @@ struct MetalBank
 class MetalVoice : public Voice
 {
 public:
-    MetalVoice (float baseHz, float tauS, float hpHz, float bpHz, float noiseMix)
-        : base (baseHz), tau (tauS), hpF (hpHz), bpF (bpHz), nMix (noiseMix) {}
+    MetalVoice (float baseHz, float tauS, float hpHz, float bpHz, float noiseMix, float bpQ = 1.2f)
+        : base (baseHz), tau (tauS), hpF (hpHz), bpF (bpHz), nMix (noiseMix), q (bpQ) {}
 
 protected:
     void onTrigger() override
@@ -206,7 +212,7 @@ protected:
         env = 1.0f;
         k = expCoef (tau * decayScale (p.decay), sr);
         const float bright = 0.6f + 0.8f * p.tone;
-        bp.set (bpF * r * bright, 1.2f, sr);
+        bp.set (bpF * r * bright, q, sr);
         hp.set (hpF * r * bright, 0.7f, sr);
     }
     float render() override
@@ -220,7 +226,7 @@ protected:
     }
 
 private:
-    float base, tau, hpF, bpF, nMix;
+    float base, tau, hpF, bpF, nMix, q;
     float env = 0, k = 0;
     MetalBank bank;
     Svf bp, hp;
@@ -231,19 +237,21 @@ private:
 class ShakerVoice : public Voice
 {
 public:
-    ShakerVoice (float hpHz, float tauS, float attackS, float metalAmt)
-        : hpF (hpHz), tau (tauS), attack (attackS), metal (metalAmt) {}
+    ShakerVoice (float hpHz, float tauS, float attackS, float metalAmt, float holdS = 0.0f, float lpHz = 20000.0f)
+        : hpF (hpHz), tau (tauS), attack (attackS), metal (metalAmt), holdTime (holdS), lpF (lpHz) {}
 
 protected:
     void onTrigger() override
     {
         const float r = semitonesToRatio (p.tune);
         hp.set (hpF * r * (0.7f + 0.6f * p.tone), 0.8f, sr);
+        lp.set (std::min (lpF * r * (0.7f + 0.6f * p.tone), sr * 0.45f), 0.8f, sr);
         bank.set (1390.0f * r, sr);
         env = 1.0f;
         k = expCoef (tau * decayScale (p.decay), sr);
         attInc = 1.0f / std::max (1.0f, attack * sr);
         att = 0;
+        hold = (long) (holdTime * decayScale (p.decay) * sr);
     }
     float render() override
     {
@@ -251,15 +259,17 @@ protected:
         float src = noise.next();
         if (metal > 0) src = src * (1.0f - metal) + src * bank.next() * metal * 2.0f;
         hp.process (src);
-        const float s = hp.hp * env * att;
-        env *= k;
+        lp.process (hp.hp);
+        const float s = lp.lp * env * att;
+        if (t >= hold) env *= k;   // meseta sostenida y luego caída
         return softClip (s * 1.8f);
     }
 
 private:
-    float hpF, tau, attack, metal;
+    float hpF, tau, attack, metal, holdTime, lpF;
+    long hold = 0;
     float env = 0, k = 0, att = 0, attInc = 0;
-    Svf hp;
+    Svf hp, lp;
     MetalBank bank;
     Noise noise { 0x7A3B11u };
 };
@@ -271,10 +281,10 @@ protected:
     void onTrigger() override
     {
         const float r = semitonesToRatio (p.tune);
-        bp.set (3200.0f * r * (0.7f + 0.6f * p.tone), 2.5f, sr);
+        bp.set (6000.0f * r * (0.7f + 0.6f * p.tone), 4.0f, sr);
         bp.reset();
-        len = 0.19f * decayScale (p.decay);
-        rate = 38.0f * r;
+        len = 0.27f * decayScale (p.decay);
+        rate = 25.0f * r;
         lfo = 0;
     }
     float render() override
@@ -282,10 +292,11 @@ protected:
         const float time = secs();
         if (time > len + 0.03f) return 0.0f;
         lfo += rate / sr; if (lfo >= 1) lfo -= 1;
-        const float scrape = std::pow (1.0f - lfo, 3.0f);
+        // Cada diente: raspado sostenido con un hueco breve al final.
+        const float scrape = lfo < 0.72f ? 1.0f - 0.4f * lfo : 0.12f;
         const float fade = time < len ? 1.0f : std::max (0.0f, 1.0f - (time - len) / 0.03f);
         bp.process (noise.next());
-        return softClip (bp.bp * scrape * fade * 4.0f);
+        return softClip (bp.bp * scrape * fade * 2.5f);
     }
 
 private:
@@ -301,16 +312,16 @@ protected:
     void onTrigger() override
     {
         const float r = semitonesToRatio (p.tune);
-        a.setFreq (562.0f * r, sr); b.setFreq (838.0f * r, sr);
-        bp.set (760.0f * r * (0.7f + 0.6f * p.tone), 2.0f, sr);
+        a.setFreq (775.0f * r, sr); b.setFreq (1160.0f * r, sr);
+        bp.set (820.0f * r * (0.7f + 0.6f * p.tone), 2.5f, sr);
         bp.reset();
         e1 = e2 = 1.0f;
-        k1 = expCoef (0.012f, sr);
-        k2 = expCoef (0.11f * decayScale (p.decay), sr);
+        k1 = expCoef (0.006f, sr);
+        k2 = expCoef (0.022f * decayScale (p.decay), sr);
     }
     float render() override
     {
-        bp.process (a.next() + b.next());
+        bp.process (a.next() + 0.45f * b.next());
         const float s = bp.bp * (0.6f * e1 + 0.4f * e2);
         e1 *= k1; e2 *= k2;
         return softClip (s * 1.8f);
@@ -358,19 +369,20 @@ inline std::unique_ptr<Voice> makeVoice (Inst i)
 {
     switch (i)
     {
-        case Inst::Kick:       return std::make_unique<ResonantVoice> (52.0f, 0.16f, 0.55f, 0.012f, 0.25f);
+        // Afinaciones y tiempos medidos sobre grabaciones de referencia de la máquina original.
+        case Inst::Kick:       return std::make_unique<ResonantVoice> (60.0f, 0.030f, 0.50f, 0.008f, 0.08f);
         case Inst::Snare:      return std::make_unique<SnareVoice>();
         case Inst::Rim:        return std::make_unique<RimVoice>();
-        case Inst::HiHat:      return std::make_unique<MetalVoice> (330.0f, 0.032f, 7000.0f, 9500.0f, 0.45f);
-        case Inst::Cymbal:     return std::make_unique<MetalVoice> (300.0f, 0.55f, 5200.0f, 7800.0f, 0.55f);
-        case Inst::MetalBeat:  return std::make_unique<MetalVoice> (420.0f, 0.07f, 2200.0f, 3600.0f, 0.15f);
-        case Inst::HiBongo:    return std::make_unique<ResonantVoice> (410.0f, 0.055f, 0.08f, 0.006f, 0.15f);
-        case Inst::LoBongo:    return std::make_unique<ResonantVoice> (285.0f, 0.075f, 0.08f, 0.006f, 0.15f);
-        case Inst::LoConga:    return std::make_unique<ResonantVoice> (192.0f, 0.12f, 0.12f, 0.010f, 0.12f);
+        case Inst::HiHat:      return std::make_unique<MetalVoice> (330.0f, 0.008f, 6500.0f, 8500.0f, 0.5f);
+        case Inst::Cymbal:     return std::make_unique<MetalVoice> (300.0f, 0.11f, 6500.0f, 8200.0f, 0.55f);
+        case Inst::MetalBeat:  return std::make_unique<MetalVoice> (420.0f, 0.020f, 4000.0f, 5900.0f, 0.1f, 5.0f);
+        case Inst::HiBongo:    return std::make_unique<ResonantVoice> (590.0f, 0.014f, 0.05f, 0.004f, 0.10f);
+        case Inst::LoBongo:    return std::make_unique<ResonantVoice> (389.0f, 0.010f, 0.05f, 0.004f, 0.25f);
+        case Inst::LoConga:    return std::make_unique<ResonantVoice> (195.0f, 0.050f, 0.06f, 0.008f, 0.10f);
         case Inst::Claves:     return std::make_unique<ResonantVoice> (2450.0f, 0.022f, 0.0f, 0.001f, 0.05f);
         case Inst::Maracas:    return std::make_unique<ShakerVoice> (7500.0f, 0.016f, 0.004f, 0.0f);
         case Inst::Guiro:      return std::make_unique<GuiroVoice>();
-        case Inst::Tambourine: return std::make_unique<ShakerVoice> (6500.0f, 0.10f, 0.002f, 0.6f);
+        case Inst::Tambourine: return std::make_unique<ShakerVoice> (3800.0f, 0.020f, 0.002f, 0.6f, 0.11f, 6800.0f);
         case Inst::Cowbell:    return std::make_unique<CowbellVoice>();
         case Inst::Count:      break;
     }
