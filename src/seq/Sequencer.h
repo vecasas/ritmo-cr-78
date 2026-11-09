@@ -188,4 +188,37 @@ inline int stepEvents (const Pattern& p, long g, const PlayOptions& o, bool (&ou
     }
     return var;
 }
+// ---------------------------------------------------------------- Modo canción
+// Una canción es una lista de pasos; cada paso es un patrón de usuario (0..98),
+// kSongEnd (para la reproducción) o kSongLoop (vuelve al principio).
+constexpr int kSongEnd = -1, kSongLoop = -2, kSongNone = -3;
+
+struct SongCursor
+{
+    int pos = -1;        // paso de canción actual (-1 = sin empezar)
+    long barStart = 0;   // paso global en que empezó el patrón actual
+    void reset() { pos = -1; barStart = 0; }
+};
+
+// Avanza el cursor hasta el paso global g. Devuelve el patrón (entrada de la lista)
+// que suena y su paso local, kSongEnd si hay que parar o kSongNone si la lista está vacía.
+// entryAt(i) da la entrada i; lengthOf(patrón) da su longitud en pasos.
+template <typename EntryAt, typename LengthOf>
+int songStep (SongCursor& c, long g, int count, EntryAt entryAt, LengthOf lengthOf, long& local)
+{
+    if (count <= 0) return kSongNone;
+    if (c.pos < 0) { c.pos = 0; c.barStart = g; }
+    for (int guard = 0; guard < 2 * count + 2; ++guard)
+    {
+        if (c.pos >= count) c.pos = 0;                 // al final de la lista vuelve a empezar
+        const int e = entryAt (c.pos);
+        if (e == kSongLoop) { c.pos = 0; continue; }
+        if (e == kSongEnd) return kSongEnd;
+        const int len = lengthOf (e) < 1 ? 1 : lengthOf (e);
+        if (g - c.barStart >= len) { c.barStart += len; ++c.pos; continue; }
+        local = g - c.barStart;
+        return e;
+    }
+    return kSongNone;
+}
 } // namespace r78

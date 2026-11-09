@@ -90,6 +90,34 @@ int main()
         CHECK (ev[(int) Inst::Kick]);
     }
 
+    // Modo canción: patrón 0 (16 pasos), patrón 1 (8 pasos), bucle.
+    {
+        int entries[3] { 0, 1, kSongLoop };
+        auto lenOf = [] (int idx) { return idx == 0 ? 16 : 8; };
+        auto at = [&entries] (int i) { return entries[i]; };
+        SongCursor c; long local = -1;
+        CHECK (songStep (c, 0, 3, at, lenOf, local) == 0 && local == 0);
+        CHECK (songStep (c, 15, 3, at, lenOf, local) == 0 && local == 15);
+        CHECK (songStep (c, 16, 3, at, lenOf, local) == 1 && local == 0);
+        CHECK (songStep (c, 23, 3, at, lenOf, local) == 1 && local == 7);
+        CHECK (songStep (c, 24, 3, at, lenOf, local) == 0 && local == 0);   // bucle
+        CHECK (c.pos == 0);
+        // Con fin: tras el patrón 1 se para.
+        entries[2] = kSongEnd;
+        SongCursor c2;
+        for (long g = 0; g < 24; ++g) CHECK (songStep (c2, g, 3, at, lenOf, local) >= 0);
+        CHECK (songStep (c2, 24, 3, at, lenOf, local) == kSongEnd);
+        // Lista vacía y lista sin fin (vuelve a empezar).
+        SongCursor c3;
+        CHECK (songStep (c3, 0, 0, at, lenOf, local) == kSongNone);
+        CHECK (songStep (c3, 0, 1, at, lenOf, local) == 0);
+        CHECK (songStep (c3, 16, 1, at, lenOf, local) == 0 && local == 0);
+        // Solo un bucle: no se queda colgado.
+        int loopOnly[1] { kSongLoop };
+        SongCursor c4;
+        CHECK (songStep (c4, 0, 1, [&loopOnly] (int i) { return loopOnly[i]; }, lenOf, local) == kSongNone);
+    }
+
     std::printf (failures ? "%d fallos\n" : "OK: todas las pruebas pasan\n", failures);
     return failures ? 1 : 0;
 }

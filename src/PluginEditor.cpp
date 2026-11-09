@@ -87,11 +87,74 @@ void MainPanel::setupKnob (juce::Slider& kn, bool big)
 
 void MainPanel::refreshLengthBox()
 {
-    lengthBox.setSelectedId (proc.pattern.length.load() * 10 + proc.pattern.stepsPerBeat.load(), juce::dontSendNotification);
+    auto& p = proc.editPattern();
+    lengthBox.setSelectedId (p.length.load() * 10 + p.stepsPerBeat.load(), juce::dontSendNotification);
 }
 
-MainPanel::MainPanel (RitmoProcessor& p) : proc (p), grid (p), fxPanel (p)
+// Muestra los controles del modo: teclas de ritmo (fábrica), de patrón (usuario) o la canción.
+void MainPanel::refreshMode()
 {
+    const int m = proc.mode();
+    shownMode = m;
+    for (auto& k : rhythmKeys->keys) k->setVisible (m == 0);
+    for (auto& k : slotKeys) k.setVisible (m == 1);
+    songStrip.setVisible (m == 2);
+    // Fills por compás no se usan en canción.
+    for (auto& k : fillKeys->keys) k->setEnabled (m != 2);
+    fillTypeBox.setEnabled (m != 2);
+    refreshSlotKeys();
+    refreshLengthBox();
+    grid.repaint();
+    repaint();
+}
+
+// Teclas de patrón de usuario: LED en el seleccionado, color si tiene notas.
+void MainPanel::refreshSlotKeys()
+{
+    const int sel = proc.userSlot();
+    shownSlot = sel;
+    for (int i = 0; i < RitmoProcessor::kUserSlots; ++i)
+    {
+        auto& k = slotKeys[(size_t) i];
+        const bool has = proc.patternHasNotes (proc.userPatterns[(size_t) i]);
+        // Seleccionado = naranja, con notas = mostaza, vacío = gris.
+        const juce::int64 c = (juce::int64) (i == sel ? orange : has ? mustard : juce::Colour (0xff8c8a82)).getARGB();
+        if (! k.getProperties()["keyColour"].equalsWithSameType (juce::var (c)))
+        {
+            k.getProperties().set ("keyColour", c);
+            k.repaint();
+        }
+    }
+}
+
+MainPanel::MainPanel (RitmoProcessor& p) : proc (p), songStrip (p), grid (p), fxPanel (p)
+{
+    // ---- Modo: fábrica, usuario o canción ----
+    modeKeys = std::make_unique<ChoiceKeys> (*this, proc.apvts, "mode", [] (int i) { return i == 0 ? cream : i == 1 ? mustard : orange; });
+    modeKeys->keys[0]->setTooltip (utf8 ("Ritmos de fábrica (tus cambios se pierden al elegir otro)"));
+    modeKeys->keys[1]->setTooltip (utf8 ("99 patrones de usuario: se guardan con el proyecto o el preset"));
+    modeKeys->keys[2]->setTooltip (utf8 ("Canción: encadena patrones de usuario, con pasos de fin y bucle"));
+
+    // ---- Patrones de usuario: 99 teclas ----
+    for (int i = 0; i < RitmoProcessor::kUserSlots; ++i)
+    {
+        auto& k = slotKeys[(size_t) i];
+        k.setButtonText (juce::String (i + 1));
+        k.setTooltip (utf8 ("Patrón de usuario ") + juce::String (i + 1));
+        k.onClick = [this, i] {
+            if (auto* prm = proc.apvts.getParameter ("user_slot"))
+            {
+                prm->beginChangeGesture();
+                prm->setValueNotifyingHost (prm->convertTo0to1 ((float) (i + 1)));
+                prm->endChangeGesture();
+            }
+            refreshSlotKeys(); refreshLengthBox(); grid.repaint();
+        };
+        addChildComponent (k);
+    }
+    addChildComponent (songStrip);
+    songStrip.onSelect = [this] { refreshLengthBox(); grid.repaint(); };
+
     // ---- Ritmos de fábrica: una tecla con LED por ritmo, coloreada por estilo ----
     const auto& rhythms = r78::factoryRhythms();
     rhythmKeys = std::make_unique<ChoiceKeys> (*this, proc.apvts, "rhythm",
@@ -120,8 +183,9 @@ MainPanel::MainPanel (RitmoProcessor& p) : proc (p), grid (p), fxPanel (p)
     lengthBox.onChange = [this] {
         const int id = lengthBox.getSelectedId();
         if (id <= 0) return;
-        proc.pattern.length.store (id / 10);
-        proc.pattern.stepsPerBeat.store (id % 10);
+        auto& ep = proc.editPattern();
+        ep.length.store (id / 10);
+        ep.stepsPerBeat.store (id % 10);
         grid.repaint();
     };
     addAndMakeVisible (lengthBox);
@@ -154,17 +218,44 @@ MainPanel::MainPanel (RitmoProcessor& p) : proc (p), grid (p), fxPanel (p)
         t.setRadioGroupId (77);
         t.setClickingTogglesState (true);
         t.getProperties().set ("led", true);
-        t.onClick = [this, v] { grid.editVar = v; grid.repaint(); };
+        t.onClick = [this, v] { grid.editVar = v; proc.recordVar.store (v); grid.repaint(); };
         addAndMakeVisible (t);
     }
     varTabs[0].setToggleState (true, juce::dontSendNotification);
     clearBtn.getProperties().set ("keyColour", (juce::int64) juce::Colour (0xff8c8a82).getARGB());
     clearBtn.onClick = [this] {
         for (int r = 0; r < r78::kRows; ++r)
-            for (int s = 0; s < r78::kMaxSteps; ++s) proc.pattern.set (grid.editVar, r, s, false);
+            for (int s = 0; s < r78::kMaxSteps; ++s) proc.editPattern().set (grid.editVar, r, s, false);
         grid.repaint();
     };
+    clearBtn.setTooltip (utf8 ("Borra la variación que estás viendo"));
     addAndMakeVisible (clearBtn);
+    for (auto* b : { &copyBtn, &pasteBtn })
+    {
+        b->getProperties().set ("keyColour", (juce::int64) juce::Colour (0xff8c8a82).getARGB());
+        addAndMakeVisible (*b);
+    }
+    copyBtn.setTooltip (utf8 ("Copia el patrón entero (A, B, Fill y longitud)"));
+    pasteBtn.setTooltip (utf8 ("Pega el patrón copiado aquí; sirve para pasar un ritmo de fábrica a un patrón de usuario"));
+    copyBtn.onClick = [this] {
+        auto& ep = proc.editPattern();
+        clip.len = ep.length.load(); clip.spb = ep.stepsPerBeat.load();
+        for (int v = 0; v < r78::kNumVars; ++v)
+            for (int r = 0; r < r78::kRows; ++r)
+                for (int s = 0; s < r78::kMaxSteps; ++s) clip.cells[v][r][s] = ep.get (v, r, s);
+        clip.valid = true;
+        pasteBtn.setEnabled (true);
+    };
+    pasteBtn.setEnabled (false);
+    pasteBtn.onClick = [this] {
+        if (! clip.valid) return;
+        auto& ep = proc.editPattern();
+        ep.length.store (clip.len); ep.stepsPerBeat.store (clip.spb);
+        for (int v = 0; v < r78::kNumVars; ++v)
+            for (int r = 0; r < r78::kRows; ++r)
+                for (int s = 0; s < r78::kMaxSteps; ++s) ep.set (v, r, s, clip.cells[v][r][s]);
+        refreshLengthBox(); refreshSlotKeys(); grid.repaint();
+    };
     grid.rowColour = [] (int r) { return r == r78::kAccentRow ? ledOn : instColour (r); };
     addAndMakeVisible (grid);
 
@@ -204,6 +295,7 @@ MainPanel::MainPanel (RitmoProcessor& p) : proc (p), grid (p), fxPanel (p)
         addAndMakeVisible (b);
     }
     showPage (0);
+    refreshMode();
     setSize (kW, kH);
     startTimerHz (15);
 }
@@ -228,6 +320,9 @@ void MainPanel::timerCallback()
     // Medidor de compresión del máster y LED de reproducción.
     const float gr = proc.compGainReduction.load();
     if (std::abs (gr - shownGr) > 0.1f) { shownGr = gr; repaint (kW - 260, 8, 60, 46); }
+    if (proc.mode() != shownMode) refreshMode();
+    if (shownMode == 1 && (proc.userSlot() != shownSlot || ++slotRefreshTick % 8 == 0)) refreshSlotKeys();
+    if (&proc.editPattern() != shownEdit) { shownEdit = &proc.editPattern(); refreshLengthBox(); grid.repaint(); }
     const bool playing = proc.currentStep.load() >= 0;
     if (playing != lastPlaying) { lastPlaying = playing; repaint(); }
 }
@@ -272,7 +367,12 @@ void MainPanel::paint (juce::Graphics& g)
     g.drawText ("MASTER", kW - kCheek - 120, 46, 70, 12, juce::Justification::centred);
 
     // ---- Rótulos de secciones ----
-    drawSectionLabel (g, { kCheek + 14, kRowA - 2, 640, 14 }, utf8 ("RITMOS"));
+    const char* areaNames[3] { "RITMOS DE FÁBRICA", "PATRONES DE USUARIO · color = con notas",
+                               "CANCIÓN · clic = editar paso · arrastrar o rueda = patrón · clic derecho = fin, bucle, insertar" };
+    drawSectionLabel (g, { kCheek + 14, kRowA - 2, 640, 14 }, utf8 (areaNames[juce::jlimit (0, 2, shownMode)]));
+    g.setColour (cream.withAlpha (0.6f));
+    g.setFont (juce::FontOptions (9.0f, juce::Font::bold));
+    g.drawText ("MODO", modeKeys->keys.front()->getX(), 2, 200, 12, juce::Justification::centredLeft);
     drawSectionLabel (g, { 720, kRowA - 2, kW - kCheek - 14 - 720, 14 }, utf8 ("TRANSPORTE"));
     drawSectionLabel (g, { kCheek + 14, kGridLabel, kW - 2 * kCheek - 28, 14 },
                       utf8 ("PATRÓN · clic o arrastrar para programar · fila roja = acento"));
@@ -314,6 +414,12 @@ void MainPanel::resized()
     for (int i = 0; i < (int) rhythmKeys->keys.size(); ++i)
         rhythmKeys->keys[(size_t) i]->setBounds (kCheek + 14 + (i % 7) * (keyW + 2), kRowA + 16 + (i / 7) * (keyH + 2), keyW, keyH);
 
+    for (int i = 0; i < RitmoProcessor::kUserSlots; ++i)
+        slotKeys[(size_t) i].setBounds (kCheek + 14 + (i % 11) * 58, kRowA + 16 + (i / 11) * 20, 57, 20);
+    songStrip.setBounds (kCheek + 14, kRowA + 16, 7 * (keyW + 2) - 2, 5 * (keyH + 2) - 2);
+    for (int i = 0; i < (int) modeKeys->keys.size(); ++i)
+        modeKeys->keys[(size_t) i]->setBounds (720 + i * 84, 15, 82, 30);
+
     // Transporte
     playBtn.setBounds (720, kRowA + 18, 96, 66);
     tempoKnob.setBounds (830, kRowA + 12, 76, 76);
@@ -325,12 +431,14 @@ void MainPanel::resized()
     for (int i = 0; i < (int) fillKeys->keys.size(); ++i)
         fillKeys->keys[(size_t) i]->setBounds (900 + i * 50, kRowA + 120, 48, 30);
     lengthBox.setBounds (1056, kRowA + 66, 150, 24);
-    fillTypeBox.setBounds (1056, kRowA + 126, 150, 24);
+    fillTypeBox.setBounds (900, kRowA + 172, 246, 22);
     masterKnob.setBounds (kW - kCheek - 110, 2, 50, 46);
 
     // Rejilla
     for (int v = 0; v < 3; ++v) varTabs[(size_t) v].setBounds (kCheek + 14 + StepGrid::labelW + v * 112, kGridTabs - 2, 108, 28);
     clearBtn.setBounds (kCheek + 14 + StepGrid::labelW + 3 * 112 + 12, kGridTabs + 6, 80, 20);
+    copyBtn.setBounds (clearBtn.getRight() + 8, kGridTabs + 6, 80, 20);
+    pasteBtn.setBounds (copyBtn.getRight() + 8, kGridTabs + 6, 80, 20);
     grid.setBounds (kCheek + 14, kGridTop, kW - 2 * kCheek - 28, kGridH);
 
     // Páginas

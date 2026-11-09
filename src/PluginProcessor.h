@@ -40,8 +40,22 @@ public:
     // Disparo desde la interfaz (hilo de mensajes -> hilo de audio, sin bloqueos).
     void auditionFromUi (int inst, bool accent) { pendingPad[(size_t) inst].store (accent ? 2 : 1); }
 
-    // Secuenciador: patrón en edición (variaciones A, B y Fill) y posición actual.
+    // Secuenciador. Modo 0 = ritmos de fábrica (copia editable en `pattern`),
+    // modo 1 = patrones de usuario, modo 2 = canción (cadena de patrones de usuario).
+    static constexpr int kUserSlots = 99, kSongSteps = 99;
+    static constexpr int kSongEnd = r78::kSongEnd, kSongLoop = r78::kSongLoop;
     r78::Pattern pattern;
+    std::array<r78::Pattern, kUserSlots> userPatterns;
+    std::array<std::atomic<int>, kSongSteps> song {};   // índice de patrón 0..98, o kSongEnd / kSongLoop
+    std::atomic<int> songLength { 0 };
+    std::atomic<int> songEditPos { 0 };                // paso de canción seleccionado en la interfaz
+    std::atomic<int> songPlayPos { -1 };               // paso de canción que suena
+    std::atomic<const r78::Pattern*> playingPattern { nullptr };
+    std::atomic<int> recordVar { 0 };                  // variación donde graban los pads en tiempo real
+    int mode() const { return (int) apvts.getRawParameterValue ("mode")->load(); }
+    int userSlot() const { return juce::jlimit (0, kUserSlots - 1, (int) apvts.getRawParameterValue ("user_slot")->load() - 1); }
+    r78::Pattern& editPattern();        // el patrón que muestra y edita la rejilla
+    bool patternHasNotes (const r78::Pattern&) const;
     std::atomic<int> currentStep { -1 };   // paso que suena ahora (-1 = parado)
     std::atomic<int> currentVar { 0 };     // variación que suena ahora
     std::atomic<float> compGainReduction { 0.0f }; // dB, para el medidor
@@ -56,8 +70,13 @@ private:
     void updateVoiceParams();
     void timerCallback() override;
     void fireStep (long globalStep);
-    juce::String patternToString() const;
-    void patternFromString (const juce::String&);
+    static juce::String patternToString (const r78::Pattern&);
+    static void patternFromString (r78::Pattern&, const juce::String&);
+    const r78::Pattern* patternForStep (long g, long& localStep, bool& songMode);
+    void recordPad (int inst, double ppq, float swing);
+
+    r78::SongCursor songCursor;
+    std::atomic<bool> stopRequested { false };
 
     r78::StepClock clock;
     r78::PlayOptions opts;

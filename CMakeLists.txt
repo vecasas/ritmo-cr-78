@@ -45,6 +45,7 @@ target_sources(RitmoCR78 PRIVATE
     src/seq/Sequencer.h
     src/seq/FactoryRhythms.cpp
     src/StepGrid.h
+    src/SongStrip.h
     src/FxPanel.h
     src/ui/VintageLookAndFeel.h
     src/fx/Effects.h)

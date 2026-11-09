@@ -41,11 +41,37 @@ void RitmoProcessor::loadFactoryRhythm (int index)
     loadedRhythm = index;
 }
 
+r78::Pattern& RitmoProcessor::editPattern()
+{
+    switch (mode())
+    {
+        case 1: return userPatterns[(size_t) userSlot()];
+        case 2:
+        {
+            const int pos = juce::jlimit (0, kSongSteps - 1, songEditPos.load());
+            const int idx = pos < songLength.load() ? song[(size_t) pos].load() : -1;
+            return userPatterns[(size_t) (idx >= 0 ? idx : 0)];
+        }
+        default: return pattern;
+    }
+}
+
+bool RitmoProcessor::patternHasNotes (const r78::Pattern& p) const
+{
+    for (int v = 0; v < r78::kNumVars; ++v)
+        for (int r = 0; r < r78::kNumInst; ++r)
+            for (int st = 0; st < r78::kMaxSteps; ++st)
+                if (p.get (v, r, st)) return true;
+    return false;
+}
+
 // Cambiar de ritmo en el selector carga el patrón de fábrica (en el hilo de mensajes).
 void RitmoProcessor::timerCallback()
 {
     const int sel = (int) apvts.getRawParameterValue ("rhythm")->load();
     if (sel != loadedRhythm) loadFactoryRhythm (sel);
+    if (stopRequested.exchange (false))
+        if (auto* p = apvts.getParameter ("play")) p->setValueNotifyingHost (0.0f);
 }
 
 juce::AudioProcessorValueTreeState::ParameterLayout RitmoProcessor::createLayout()
@@ -56,6 +82,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout RitmoProcessor::createLayout
 
     // Secuenciador
     layout.add (std::make_unique<AudioParameterBool> (ParameterID { "play", 1 }, "Play", false));
+    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "mode", 1 }, "Modo",
+                                                        StringArray { String (CharPointer_UTF8 ("Fábrica")), "Usuario", String (CharPointer_UTF8 ("Canción")) }, 0));
+    layout.add (std::make_unique<AudioParameterInt> (ParameterID { "user_slot", 1 }, "Patrón de usuario", 1, kUserSlots, 1));
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "rhythm", 1 }, "Ritmo", rhythmNames(), 0));
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { "tempo", 1 }, "Tempo",
                                                        NormalisableRange<float> (40.0f, 240.0f, 0.1f), 120.0f));
@@ -181,9 +210,9 @@ void RitmoProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
     updateVoiceParams();
     updateFxParams();
 
+    std::array<int, r78::kNumInst> padHits {};
     for (int i = 0; i < r78::kNumInst; ++i)
-        if (const int v = pendingPad[(size_t) i].exchange (0))
-            kit.trigger (i, 1.0f, v == 2);
+        padHits[(size_t) i] = pendingPad[(size_t) i].exchange (0);
 
     // ---- Secuenciador: decidir reloj (DAW o interno) ----
     const double sampleRate = getSampleRate() > 0 ? getSampleRate() : 44100.0;
@@ -212,7 +241,9 @@ void RitmoProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
     opts.fillType = (int) apvts.getRawParameterValue ("fill_type")->load();
     accentAmount = apvts.getRawParameterValue ("accent")->load();
 
-    const int spb = juce::jlimit (1, 8, pattern.stepsPerBeat.load());
+    const int curMode = mode();
+    const r78::Pattern& refPat = curMode == 1 ? userPatterns[(size_t) userSlot()] : pattern;
+    const int spb = juce::jlimit (1, 8, curMode == 2 ? 4 : refPat.stepsPerBeat.load());
     if (running)
     {
         if (! wasRunning && ! hostDriven) ppq = 0.0;
@@ -220,13 +251,22 @@ void RitmoProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
         {
             clock.locate (ppq, spb);
             clockSpb = spb;
+            songCursor.reset();   // la canción empieza desde el principio
         }
     }
     else if (wasRunning)
     {
         currentStep.store (-1);
+        songPlayPos.store (-1);
+        playingPattern.store (nullptr);
     }
     wasRunning = running;
+    for (int i = 0; i < r78::kNumInst; ++i)
+        if (padHits[(size_t) i])
+        {
+            kit.trigger (i, 1.0f, padHits[(size_t) i] == 2);
+            if (running && curMode != 0) recordPad (i, ppq, opts.swing);   // grabación en tiempo real
+        }
     const double ppqPerSample = bpm / 60.0 / sampleRate;
 
     const float gain = master->load();
@@ -266,18 +306,57 @@ void RitmoProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
     compGainReduction.store (masterBus.comp.gainReductionDb);
 }
 
+// Devuelve el patrón que suena en el paso global g y el paso relativo a ese patrón.
+const r78::Pattern* RitmoProcessor::patternForStep (long g, long& localStep, bool& songMode)
+{
+    const int m = mode();
+    songMode = m == 2;
+    if (m == 0) { localStep = g; return &pattern; }
+    if (m == 1) { localStep = g; return &userPatterns[(size_t) userSlot()]; }
+
+    const int e = r78::songStep (songCursor, g, songLength.load(),
+                                 [this] (int i) { return song[(size_t) i].load(); },
+                                 [this] (int idx) { return userPatterns[(size_t) juce::jlimit (0, kUserSlots - 1, idx)].length.load(); },
+                                 localStep);
+    if (e == kSongEnd) { stopRequested.store (true); return nullptr; }
+    if (e < 0) return nullptr;
+    songPlayPos.store (songCursor.pos);
+    return &userPatterns[(size_t) juce::jlimit (0, kUserSlots - 1, e)];
+}
+
 void RitmoProcessor::fireStep (long g)
 {
+    long local = 0;
+    bool songMode = false;
+    const auto* pat = patternForStep (g, local, songMode);
+    if (pat == nullptr) return;
     bool ev[r78::kRows];
-    const int var = r78::stepEvents (pattern, g, opts, ev);
-    const int len = juce::jlimit (1, r78::kMaxSteps, pattern.length.load());
+    auto o = opts;
+    if (songMode) { o.fillEvery = 0; }                    // en modo canción no hay fills
+    const int var = r78::stepEvents (*pat, local, o, ev);
+    const int len = juce::jlimit (1, r78::kMaxSteps, pat->length.load());
     // Con acento suena a nivel completo; sin acento baja según el control "Acento".
     const float vel = ev[r78::kAccentRow] ? 1.0f : 1.0f - 0.45f * accentAmount;
     for (int i = 0; i < r78::kNumInst; ++i)
         if (ev[i])
             kit.trigger (i, vel, true);
-    currentStep.store ((int) (g % len));
+    currentStep.store ((int) (local % len));
     currentVar.store (var);
+    playingPattern.store (pat);
+}
+
+// Graba un golpe de pad en el paso más cercano del patrón que está sonando.
+void RitmoProcessor::recordPad (int inst, double ppq, float swing)
+{
+    const long next = clock.peekNext();
+    const double tNext = clock.stepTime (next, swing), tPrev = clock.stepTime (next - 1, swing);
+    const long target = (tNext - ppq) < (ppq - tPrev) ? next : next - 1;
+    if (target < 0) return;
+    auto* pat = const_cast<r78::Pattern*> (playingPattern.load());
+    if (pat == nullptr) return;
+    const int len = juce::jlimit (1, r78::kMaxSteps, pat->length.load());
+    const long local = mode() == 2 ? target - songCursor.barStart : target;
+    pat->set (recordVar.load(), inst, (int) (((local % len) + len) % len), true);
 }
 
 juce::AudioProcessorEditor* RitmoProcessor::createEditor() { return new RitmoEditor (*this); }
@@ -285,7 +364,21 @@ juce::AudioProcessorEditor* RitmoProcessor::createEditor() { return new RitmoEdi
 void RitmoProcessor::getStateInformation (juce::MemoryBlock& dest)
 {
     auto state = apvts.copyState();
-    state.setProperty ("pattern", patternToString(), nullptr);
+    state.setProperty ("pattern", patternToString (pattern), nullptr);
+    // Patrones de usuario (solo los que tienen notas) y canción.
+    auto user = state.getOrCreateChildWithName ("USER", nullptr);
+    user.removeAllChildren (nullptr);
+    for (int i = 0; i < kUserSlots; ++i)
+        if (patternHasNotes (userPatterns[(size_t) i]))
+        {
+            juce::ValueTree slot ("SLOT");
+            slot.setProperty ("index", i, nullptr);
+            slot.setProperty ("data", patternToString (userPatterns[(size_t) i]), nullptr);
+            user.appendChild (slot, nullptr);
+        }
+    juce::StringArray songItems;
+    for (int i = 0; i < songLength.load(); ++i) songItems.add (juce::String (song[(size_t) i].load()));
+    state.setProperty ("song", songItems.joinIntoString (","), nullptr);
     state.setProperty ("loadedRhythm", loadedRhythm, nullptr);
     if (auto xml = state.createXml())
         copyXmlToBinary (*xml, dest);
@@ -299,12 +392,23 @@ void RitmoProcessor::setStateInformation (const void* data, int size)
             auto state = juce::ValueTree::fromXml (*xml);
             apvts.replaceState (state);
             loadedRhythm = state.getProperty ("loadedRhythm", (int) apvts.getRawParameterValue ("rhythm")->load());
-            if (state.hasProperty ("pattern")) patternFromString (state["pattern"].toString());
+            if (state.hasProperty ("pattern")) patternFromString (pattern, state["pattern"].toString());
+            for (auto& up : userPatterns) { up.clear(); up.length.store (16); up.stepsPerBeat.store (4); }
+            for (auto slot : state.getChildWithName ("USER"))
+            {
+                const int i = slot["index"];
+                if (i >= 0 && i < kUserSlots) patternFromString (userPatterns[(size_t) i], slot["data"].toString());
+            }
+            const auto items = juce::StringArray::fromTokens (state["song"].toString(), ",", "");
+            int n = 0;
+            for (auto& it : items)
+                if (it.isNotEmpty() && n < kSongSteps) song[(size_t) n++].store (it.getIntValue());
+            songLength.store (n);
         }
 }
 
 // Serializa el patrón: "longitud,pasosPorPulso|var:fila:pasos|..."
-juce::String RitmoProcessor::patternToString() const
+juce::String RitmoProcessor::patternToString (const r78::Pattern& pattern)
 {
     juce::String out;
     out << pattern.length.load() << "," << pattern.stepsPerBeat.load();
@@ -318,7 +422,7 @@ juce::String RitmoProcessor::patternToString() const
     return out;
 }
 
-void RitmoProcessor::patternFromString (const juce::String& str)
+void RitmoProcessor::patternFromString (r78::Pattern& pattern, const juce::String& str)
 {
     auto parts = juce::StringArray::fromTokens (str, "|", "");
     if (parts.isEmpty()) return;

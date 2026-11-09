@@ -82,3 +82,17 @@ Diseño propio de aire setentero, dibujado por código: laterales de madera, pan
 - La ventana se puede redimensionar del 50 % al 200 % manteniendo la proporción.
 
 Captura sin ventana para documentación: `cmake -B build -DR78_UI_SNAPSHOT=ON && cmake --build build --target ui_snapshot`.
+
+## Patrones de usuario y canción (fase 6)
+
+Las teclas **MODO** de la cabecera eligen qué toca la caja:
+
+- **Fábrica**: los 35 ritmos. Puedes retocarlos, pero los cambios se pierden al elegir otro ritmo.
+- **Usuario**: 99 patrones propios (teclas 1–99; mostaza = tiene notas, naranja = el seleccionado). Se guardan con el proyecto del DAW.
+- **Canción**: hasta 99 pasos que encadenan patrones de usuario. Clic en un paso para editar su patrón en la rejilla, arrastrar o rueda para cambiar el número, clic en «+» para añadir y clic derecho para Fin (para la reproducción), Bucle (vuelve al principio), Insertar, Eliminar o Vaciar.
+
+Con la caja en marcha en modo Usuario o Canción, los pads graban en tiempo real en el paso más cercano de la variación que estés viendo.
+**Copiar** y **Pegar** copian el patrón entero (A, B, Fill y longitud): así se pasa un ritmo de fábrica a un patrón de usuario. Clic derecho en el nombre de una fila copia, pega o borra esa fila.
+
+![Patrones de usuario](docs/interfaz_usuario.png)
+![Canción](docs/interfaz_cancion.png)
