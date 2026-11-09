@@ -41,7 +41,10 @@ target_sources(RitmoCR78 PRIVATE
     src/PluginProcessor.cpp
     src/PluginEditor.cpp
     src/dsp/DspUtils.h
-    src/dsp/Voices.h)
+    src/dsp/Voices.h
+    src/seq/Sequencer.h
+    src/seq/FactoryRhythms.cpp
+    src/StepGrid.h)
 
 target_compile_definitions(RitmoCR78 PUBLIC
     JUCE_WEB_BROWSER=0
@@ -56,3 +59,10 @@ target_link_libraries(RitmoCR78
 # Herramienta de línea de comandos que renderiza las voces a WAV (sin JUCE).
 add_executable(render_demo tools/render_demo.cpp)
 target_compile_features(render_demo PRIVATE cxx_std_20)
+target_sources(render_demo PRIVATE src/seq/FactoryRhythms.cpp)
+
+# Pruebas del secuenciador (sin JUCE): ctest --test-dir build -C Release
+enable_testing()
+add_executable(test_sequencer tests/test_sequencer.cpp src/seq/FactoryRhythms.cpp)
+target_compile_features(test_sequencer PRIVATE cxx_std_20)
+add_test(NAME sequencer COMMAND test_sequencer)

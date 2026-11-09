@@ -20,7 +20,7 @@ En Windows copia `Ritmo CR-78.vst3` a `C:\Program Files\Common Files\VST3\`.
 
 1. Esqueleto + CI (hecho)
 2. Voces sintetizadas (hecho)
-3. Secuenciador y ritmos
+3. Secuenciador y ritmos (hecho)
 4. Mezclador y efectos
 5. Interfaz gráfica
 6. MIDI, salidas múltiples y presets
@@ -48,3 +48,15 @@ En Windows copia `Ritmo CR-78.vst3` a `C:\Program Files\Common Files\VST3\`.
 Velocidad MIDI > 100 = acento. En la interfaz, Mayús+clic en un pad = acento.
 
 `render_demo <carpeta>` genera `01_instrumentos.wav` y `02_ritmo_demo.wav` para escuchar las voces sin DAW.
+
+## Secuenciador (fase 3)
+
+- Patrones de 8, 9, 12, 16, 24 o 32 pasos, en semicorcheas o en tresillos (12/8, swing).
+- Tres variaciones por ritmo: **A**, **B** y **Fill**. Modo A, B o A+B alternando por compás, y fill automático cada 2, 4, 8 o 16 compases.
+- Fila de acentos por paso, con control de intensidad del acento.
+- Swing del 50 % (recto) al 75 %.
+- 35 ritmos de fábrica de programación propia: rock, balada, slow rock, twist, synth pop, new wave, minimal, electro, hip-hop, house, disco, funk, soul, shuffle, reggae, ska, bossa nova, samba, rumba, cha-cha, mambo, beguine, tango, bolero, afro, swing, foxtrot, vals, vals de jazz, marcha y polka.
+- En el DAW se sincroniza con el transporte (opción *Sync DAW*); en la app standalone usa su propio tempo y el botón PLAY.
+- El patrón editado se guarda con la sesión del DAW.
+
+Pruebas: `ctest --test-dir build -C Release`.

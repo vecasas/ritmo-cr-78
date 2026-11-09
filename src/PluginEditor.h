@@ -1,8 +1,10 @@
 #pragma once
 #include "PluginProcessor.h"
+#include "StepGrid.h"
 
-// Interfaz provisional de la fase 2: una columna por instrumento con pad de prueba
-// y sus cinco controles. La interfaz definitiva llega en la fase 5.
+// Interfaz provisional (fases 2 y 3): transporte y ritmo arriba, rejilla de pasos
+// en el centro y una tira de controles por instrumento abajo.
+// La interfaz definitiva llega en la fase 5.
 class RitmoEditor : public juce::AudioProcessorEditor
 {
 public:
@@ -13,6 +15,7 @@ public:
 private:
     using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
     using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;
+    using ComboAttachment = juce::AudioProcessorValueTreeState::ComboBoxAttachment;
 
     struct Strip
     {
@@ -23,10 +26,26 @@ private:
         std::unique_ptr<ButtonAttachment> mAtt;
     };
 
+    void setupKnob (juce::Slider&);
+    void setupCombo (juce::ComboBox&, const juce::String& paramId);
+    void refreshLengthBox();
+
     RitmoProcessor& proc;
     std::array<Strip, r78::kNumInst> strips;
-    juce::Slider masterKnob;
-    std::unique_ptr<SliderAttachment> masterAtt;
+
+    // Transporte y secuenciador
+    juce::TextButton playBtn { "PLAY" };
+    juce::ComboBox rhythmBox, variationBox, fillBox, lengthBox;
+    juce::Slider tempoKnob, swingKnob, accentKnob, masterKnob;
+    juce::ToggleButton syncBtn { "Sync DAW" };
+    std::array<juce::TextButton, 3> varTabs { juce::TextButton { "Editar A" }, juce::TextButton { "Editar B" },
+                                              juce::TextButton { "Editar Fill" } };
+    juce::TextButton clearBtn { "Borrar" };
+    StepGrid grid;
+
+    std::unique_ptr<ButtonAttachment> playAtt, syncAtt;
+    std::vector<std::unique_ptr<ComboAttachment>> comboAtts;
+    std::vector<std::unique_ptr<SliderAttachment>> knobAtts;
 
     static constexpr const char* paramNames[5] { "level", "tune", "decay", "tone", "pan" };
 

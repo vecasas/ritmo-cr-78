@@ -1,6 +1,7 @@
 // Renderiza cada voz y un ritmo de ejemplo a WAV para escucharlos sin DAW.
 // Uso: render_demo <carpeta_salida>
 #include "../src/dsp/Voices.h"
+#include "../src/seq/Sequencer.h"
 #include <cstdio>
 #include <string>
 #include <vector>
@@ -87,6 +88,40 @@ int main (int argc, char** argv)
             }
         for (int s = 0; s < sr; ++s) { float l, r; kit.process (l, r); l2.push_back (l * 0.5f); r2.push_back (r * 0.5f); }
         writeWav (out + "/02_ritmo_demo.wav", l2, r2, sr);
+    }
+    // 3) Catálogo de ritmos de fábrica: A, A, B y Fill de cada uno, con el
+    //    mismo motor de pasos que usa el plugin.
+    {
+        std::vector<float> l3, r3;
+        for (auto& d : r78::factoryRhythms())
+        {
+            r78::DrumKit kit;
+            kit.setSampleRate ((float) sr);
+            r78::Pattern pat;
+            r78::loadRhythm (pat, d);
+            r78::StepClock clock;
+            clock.locate (0.0, d.stepsPerBeat);
+            const double beatsPerBar = (double) d.length / d.stepsPerBeat;
+            const double ppqPerSample = d.bpm / 60.0 / sr;
+            const int vars[4] { r78::VarA, r78::VarA, r78::VarB, r78::VarFill };
+            double ppq = 0.0;
+            while (ppq < beatsPerBar * 4.0)
+            {
+                for (long g; (g = clock.poll (ppq, 0.5f)) >= 0;)
+                {
+                    const int step = (int) (g % d.length);
+                    const int var = vars[std::min<long> (3, g / d.length)];
+                    const bool acc = pat.get (var, r78::kAccentRow, step);
+                    for (int i = 0; i < r78::kNumInst; ++i)
+                        if (pat.get (var, i, step)) kit.trigger (i, acc ? 1.0f : 0.73f, true);
+                }
+                float l, r; kit.process (l, r);
+                l3.push_back (l * 0.5f); r3.push_back (r * 0.5f);
+                ppq += ppqPerSample;
+            }
+            for (int s = 0; s < sr / 2; ++s) { float l, r; kit.process (l, r); l3.push_back (l * 0.5f); r3.push_back (r * 0.5f); }
+        }
+        writeWav (out + "/04_ritmos_fabrica.wav", l3, r3, sr);
     }
     std::puts ("ok");
     return 0;
