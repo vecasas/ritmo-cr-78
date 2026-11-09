@@ -45,6 +45,7 @@ target_sources(RitmoCR78 PRIVATE
     src/seq/Sequencer.h
     src/seq/MidiMap.h
     src/MidiPanel.h
+    src/PresetBar.h
     src/seq/FactoryRhythms.cpp
     src/StepGrid.h
     src/SongStrip.h

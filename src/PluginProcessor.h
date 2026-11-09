@@ -30,10 +30,11 @@ public:
     bool isMidiEffect() const override { return false; }
     double getTailLengthSeconds() const override { return 3.0; }
 
-    int getNumPrograms() override { return 1; }
-    int getCurrentProgram() override { return 0; }
-    void setCurrentProgram (int) override {}
-    const juce::String getProgramName (int) override { return {}; }
+    // Programas = presets de sonido de fábrica (el DAW los ve en su lista).
+    int getNumPrograms() override;
+    int getCurrentProgram() override { return currentProgram; }
+    void setCurrentProgram (int) override;
+    const juce::String getProgramName (int) override;
     void changeProgramName (int, const juce::String&) override {}
 
     void getStateInformation (juce::MemoryBlock&) override;
@@ -80,8 +81,20 @@ public:
     // patrón actual, o una pasada de la canción en modo canción).
     juce::File exportMidiFile (int bars);
 
+    // Presets: archivo con el estado completo (sonido, efectos, patrones de
+    // usuario, canción y mapa MIDI) en Documentos/Ritmo CR-78/Presets.
+    static constexpr const char* kPresetExt = ".r78preset";
+    static juce::File presetFolder();
+    static juce::Array<juce::File> userPresets();
+    bool savePreset (const juce::File&);
+    bool loadPreset (const juce::File&);
+    juce::String presetName;   // nombre mostrado (hilo de mensajes)
+
 private:
     static BusesProperties makeBuses();
+    std::unique_ptr<juce::XmlElement> createStateXml();
+    bool loadStateXml (const juce::XmlElement&);
+    int currentProgram = 0;
     void updateVoiceParams();
     void timerCallback() override;
     void fireStep (long globalStep);

@@ -65,6 +65,24 @@ int main (int argc, char** argv)
         for (const auto m : mb) std::printf ("midi out: %s\n", m.getMessage().getDescription().toRawUTF8());
         const auto f = proc.exportMidiFile (2);
         std::printf ("export %s %lld bytes\n", f.getFullPathName().toRawUTF8(), (long long) f.getSize());
+        // Presets: guardar, cambiar cosas, cargar y comprobar que vuelven.
+        auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("prueba.r78preset");
+        proc.userPatterns[5].set (0, 0, 3, true);
+        if (auto* p = proc.apvts.getParameter ("rv_mix")) p->setValueNotifyingHost (0.9f);
+        proc.midiMap.assign (0, 40);
+        std::printf ("guardar %d\n", (int) proc.savePreset (tmp));
+        proc.userPatterns[5].clear();
+        proc.midiMap.reset();
+        if (auto* p = proc.apvts.getParameter ("rv_mix")) p->setValueNotifyingHost (0.1f);
+        if (auto* p = proc.apvts.getParameter ("play")) p->setValueNotifyingHost (1.0f);
+        const bool loaded = proc.loadPreset (tmp);
+        std::printf ("cargar %d  patron %d  rv_mix %.2f  bombo nota %d  play %.0f  nombre %s\n", (int) loaded,
+                     (int) proc.userPatterns[5].get (0, 0, 3), proc.apvts.getParameter ("rv_mix")->getValue(),
+                     proc.midiMap.note[0].load(), proc.apvts.getParameter ("play")->getValue(), proc.presetName.toRawUTF8());
+        proc.setCurrentProgram (4);
+        std::printf ("fabrica %s  fl_on %.0f  rv_mix %.2f  patron %d\n", proc.getProgramName (4).toRawUTF8(),
+                     proc.apvts.getParameter ("fl_on")->getValue(), proc.apvts.getParameter ("rv_mix")->getValue(),
+                     (int) proc.userPatterns[5].get (0, 0, 3));
         return 0;
     }
 
