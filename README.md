@@ -116,3 +116,10 @@ Página **MIDI** (pestaña junto a Efectos y máster):
 
 - **Salidas de audio**: además de la principal, el plugin ofrece 7 salidas estéreo extra (Salida 2 a 8). En la página *MIDI y salidas* eliges la salida de cada instrumento. Las extra van en seco (sin efectos ni compresor/EQ, sí con master y fade) para procesarlas en el DAW. Hay que activarlas en el DAW; si una salida está desactivada, el instrumento vuelve a la principal.
 - **Arrastrar MIDI**: elige cuántos compases (1–16) y arrastra la tecla a una pista del DAW o al escritorio. Exporta lo que sonaría: variación, fills, swing, Cancelar voz y el mapa de notas. En modo canción exporta una pasada de la canción.
+
+## Presets (fase 6)
+
+La barra **PRESET** (a la derecha de las pestañas) tiene anterior / siguiente, el nombre (clic = menú) y **Guardar**.
+
+- **De fábrica**: 8 presets de sonido (Inicial, Seco de estudio, Sala con gate, Cinta caliente, Flanger metálico, Eco dub, Graves profundos, Lo-fi pequeño). Cambian voces, efectos y máster, pero no tus patrones, el ritmo, el tempo, el MIDI ni las salidas. El DAW también los ve como programas.
+- **Tuyos**: un preset guarda todo: sonido, efectos, patrones de usuario, canción y mapa MIDI. Se guardan en `Documentos/Ritmo CR-78/Presets` como archivos `.r78preset`, que puedes copiar entre Mac y Windows. Cargar un preset no para ni arranca la caja.

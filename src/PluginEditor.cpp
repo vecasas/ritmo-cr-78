@@ -127,7 +127,7 @@ void MainPanel::refreshSlotKeys()
     }
 }
 
-MainPanel::MainPanel (RitmoProcessor& p) : proc (p), songStrip (p), grid (p), fxPanel (p), midiPanel (p)
+MainPanel::MainPanel (RitmoProcessor& p) : proc (p), songStrip (p), grid (p), fxPanel (p), midiPanel (p), presetBar (p)
 {
     // ---- Modo: fábrica, usuario o canción ----
     modeKeys = std::make_unique<ChoiceKeys> (*this, proc.apvts, "mode", [] (int i) { return i == 0 ? cream : i == 1 ? mustard : orange; });
@@ -318,6 +318,7 @@ MainPanel::MainPanel (RitmoProcessor& p) : proc (p), songStrip (p), grid (p), fx
 
     addChildComponent (fxPanel);
     addChildComponent (midiPanel);
+    addAndMakeVisible (presetBar);
     const char* pages[3] { "Instrumentos", "Efectos y máster", "MIDI y salidas" };
     for (int t = 0; t < 3; ++t)
     {
@@ -494,6 +495,7 @@ void MainPanel::resized()
     pageTabs[0].setBounds (kCheek + 14, kPageTabs - 4, 130, 30);
     pageTabs[1].setBounds (kCheek + 150, kPageTabs - 4, 160, 30);
     pageTabs[2].setBounds (kCheek + 316, kPageTabs - 4, 140, 30);
+    presetBar.setBounds (kW - kCheek - 14 - 520, kPageTabs + 2, 520, 24);
 
     // Tiras: pad, NIVEL grande, Afinar/Decay, Tono/Pan, Mute/FX
     const int x0 = kCheek + 12 + ((kW - 2 * kCheek - 24) - kStripW * r78::kNumInst) / 2;

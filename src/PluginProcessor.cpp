@@ -567,7 +567,7 @@ void RitmoProcessor::recordPad (int inst, double ppq, float swing)
 
 juce::AudioProcessorEditor* RitmoProcessor::createEditor() { return new RitmoEditor (*this); }
 
-void RitmoProcessor::getStateInformation (juce::MemoryBlock& dest)
+std::unique_ptr<juce::XmlElement> RitmoProcessor::createStateXml()
 {
     auto state = apvts.copyState();
     state.setProperty ("pattern", patternToString (pattern), nullptr);
@@ -589,35 +589,141 @@ void RitmoProcessor::getStateInformation (juce::MemoryBlock& dest)
     juce::StringArray notes;
     for (auto& nn : midiMap.note) notes.add (juce::String (nn.load()));
     state.setProperty ("notemap", notes.joinIntoString (","), nullptr);
-    if (auto xml = state.createXml())
+    state.setProperty ("presetName", presetName, nullptr);
+    return state.createXml();
+}
+
+bool RitmoProcessor::loadStateXml (const juce::XmlElement& xml)
+{
+    if (! xml.hasTagName (apvts.state.getType())) return false;
+    auto state = juce::ValueTree::fromXml (xml);
+    apvts.replaceState (state);
+    loadedRhythm = state.getProperty ("loadedRhythm", (int) apvts.getRawParameterValue ("rhythm")->load());
+    if (state.hasProperty ("pattern")) patternFromString (pattern, state["pattern"].toString());
+    for (auto& up : userPatterns) { up.clear(); up.length.store (16); up.stepsPerBeat.store (4); }
+    for (auto slot : state.getChildWithName ("USER"))
+    {
+        const int i = slot["index"];
+        if (i >= 0 && i < kUserSlots) patternFromString (userPatterns[(size_t) i], slot["data"].toString());
+    }
+    const auto items = juce::StringArray::fromTokens (state["song"].toString(), ",", "");
+    int n = 0;
+    for (auto& it : items)
+        if (it.isNotEmpty() && n < kSongSteps) song[(size_t) n++].store (it.getIntValue());
+    songLength.store (n);
+    midiMap.reset();
+    const auto nm = juce::StringArray::fromTokens (state["notemap"].toString(), ",", "");
+    if (nm.size() == r78::kNumInst)
+        for (int i = 0; i < r78::kNumInst; ++i) midiMap.note[(size_t) i].store (juce::jlimit (-1, 127, nm[i].getIntValue()));
+    presetName = state.getProperty ("presetName", juce::String()).toString();
+    return true;
+}
+
+void RitmoProcessor::getStateInformation (juce::MemoryBlock& dest)
+{
+    if (auto xml = createStateXml())
         copyXmlToBinary (*xml, dest);
 }
 
 void RitmoProcessor::setStateInformation (const void* data, int size)
 {
     if (auto xml = getXmlFromBinary (data, size))
-        if (xml->hasTagName (apvts.state.getType()))
-        {
-            auto state = juce::ValueTree::fromXml (*xml);
-            apvts.replaceState (state);
-            loadedRhythm = state.getProperty ("loadedRhythm", (int) apvts.getRawParameterValue ("rhythm")->load());
-            if (state.hasProperty ("pattern")) patternFromString (pattern, state["pattern"].toString());
-            for (auto& up : userPatterns) { up.clear(); up.length.store (16); up.stepsPerBeat.store (4); }
-            for (auto slot : state.getChildWithName ("USER"))
-            {
-                const int i = slot["index"];
-                if (i >= 0 && i < kUserSlots) patternFromString (userPatterns[(size_t) i], slot["data"].toString());
-            }
-            const auto items = juce::StringArray::fromTokens (state["song"].toString(), ",", "");
-            int n = 0;
-            for (auto& it : items)
-                if (it.isNotEmpty() && n < kSongSteps) song[(size_t) n++].store (it.getIntValue());
-            songLength.store (n);
-            midiMap.reset();
-            const auto nm = juce::StringArray::fromTokens (state["notemap"].toString(), ",", "");
-            if (nm.size() == r78::kNumInst)
-                for (int i = 0; i < r78::kNumInst; ++i) midiMap.note[(size_t) i].store (juce::jlimit (-1, 127, nm[i].getIntValue()));
-        }
+        loadStateXml (*xml);
+}
+
+// ---------------------------------------------------------------- Presets
+juce::File RitmoProcessor::presetFolder()
+{
+    auto dir = juce::File::getSpecialLocation (juce::File::userDocumentsDirectory)
+                   .getChildFile ("Ritmo CR-78").getChildFile ("Presets");
+    dir.createDirectory();
+    return dir;
+}
+
+juce::Array<juce::File> RitmoProcessor::userPresets()
+{
+    auto files = presetFolder().findChildFiles (juce::File::findFiles, false, "*" + juce::String (kPresetExt));
+    files.sort();
+    return files;
+}
+
+bool RitmoProcessor::savePreset (const juce::File& file)
+{
+    presetName = file.getFileNameWithoutExtension();
+    auto xml = createStateXml();
+    if (xml == nullptr) return false;
+    return file.withFileExtension (kPresetExt).replaceWithText (xml->toString());
+}
+
+bool RitmoProcessor::loadPreset (const juce::File& file)
+{
+    auto xml = juce::XmlDocument::parse (file);
+    if (xml == nullptr) return false;
+    // Cargar un preset no para ni arranca la caja, ni cambia la sincronía con el DAW.
+    const float play = apvts.getParameter ("play")->getValue();
+    const float sync = apvts.getParameter ("sync")->getValue();
+    if (! loadStateXml (*xml)) return false;
+    apvts.getParameter ("play")->setValueNotifyingHost (play);
+    apvts.getParameter ("sync")->setValueNotifyingHost (sync);
+    presetName = file.getFileNameWithoutExtension();
+    return true;
+}
+
+// Presets de sonido de fábrica: tocan voces, efectos y máster, no los patrones.
+namespace
+{
+struct FactoryPreset { const char* name; std::vector<std::pair<const char*, float>> values; };
+const std::vector<FactoryPreset>& factoryPresets()
+{
+    static const std::vector<FactoryPreset> list {
+        { "Inicial", {} },
+        { "Seco de estudio", { { "rv_on", 0 }, { "comp_thr", -18 }, { "comp_ratio", 4 }, { "comp_makeup", 5 },
+                               { "eq_0", 2 }, { "eq_5", 2 } } },
+        { "Sala con gate", { { "sd_send", 1 }, { "rs_send", 1 }, { "bd_send", 1 }, { "rv_size", 0.85f }, { "rv_gate", 220 },
+                             { "rv_mix", 0.5f }, { "comp_thr", -20 }, { "comp_ratio", 5 }, { "comp_makeup", 6 },
+                             { "sd_tone", 0.65f }, { "sd_decay", 0.6f } } },
+        { "Cinta caliente", { { "bd_send", 1 }, { "sd_send", 1 }, { "hh_send", 1 }, { "rv_on", 0 }, { "od_on", 1 },
+                              { "od_drive", 0.55f }, { "od_tone", 0.4f }, { "od_mix", 0.6f }, { "eq_1", 3 }, { "eq_5", -3 } } },
+        { "Flanger metálico", { { "hh_send", 1 }, { "cy_send", 1 }, { "mb_send", 1 }, { "ta_send", 1 }, { "ma_send", 1 },
+                                { "rv_on", 0 }, { "fl_on", 1 }, { "fl_rate", 0.2f }, { "fl_depth", 0.8f }, { "fl_fb", 0.6f },
+                                { "fl_mix", 0.6f } } },
+        { "Eco dub", { { "rs_send", 1 }, { "cb_send", 1 }, { "cl_send", 1 }, { "sd_send", 1 }, { "dl_on", 1 }, { "dl_time", 3 },
+                       { "dl_fb", 0.55f }, { "dl_damp", 0.6f }, { "dl_mix", 0.45f }, { "rv_mix", 0.2f }, { "eq_0", 3 } } },
+        { "Graves profundos", { { "bd_tune", -4 }, { "bd_decay", 0.8f }, { "lc_tune", -3 }, { "lb_tune", -2 }, { "eq_0", 4 },
+                                { "eq_3", -2 }, { "comp_thr", -16 } } },
+        { "Lo-fi pequeño", { { "hh_tone", 0.3f }, { "cy_tone", 0.3f }, { "eq_0", -6 }, { "eq_5", -8 }, { "eq_3", 4 },
+                             { "od_on", 1 }, { "od_drive", 0.3f }, { "bd_send", 1 }, { "sd_send", 1 }, { "rv_on", 0 } } },
+    };
+    return list;
+}
+
+bool isSoundParam (const juce::String& id)
+{
+    // Lo que NO cambia un preset de sonido: transporte, ritmo, MIDI, cancelar y salidas.
+    static const juce::StringArray keep { "play", "mode", "user_slot", "rhythm", "tempo", "swing", "variation", "fill",
+                                          "fill_type", "accent", "sync", "fade_time", "master" };
+    return ! (keep.contains (id) || id.startsWith ("midi_") || id.startsWith ("cancel_") || id.endsWith ("_out"));
+}
+}
+
+int RitmoProcessor::getNumPrograms() { return (int) factoryPresets().size(); }
+const juce::String RitmoProcessor::getProgramName (int i)
+{
+    return juce::isPositiveAndBelow (i, getNumPrograms()) ? juce::String (juce::CharPointer_UTF8 (factoryPresets()[(size_t) i].name)) : juce::String();
+}
+
+void RitmoProcessor::setCurrentProgram (int i)
+{
+    if (! juce::isPositiveAndBelow (i, getNumPrograms())) return;
+    currentProgram = i;
+    for (auto* prm : getParameters())
+        if (auto* rp = dynamic_cast<juce::RangedAudioParameter*> (prm))
+            if (isSoundParam (rp->getParameterID()))
+                rp->setValueNotifyingHost (rp->getDefaultValue());
+    for (auto& [id, v] : factoryPresets()[(size_t) i].values)
+        if (auto* rp = apvts.getParameter (id))
+            rp->setValueNotifyingHost (rp->convertTo0to1 (v));
+    presetName = getProgramName (i);
 }
 
 // Serializa el patrón: "longitud,pasosPorPulso|var:fila:pasos|..."
